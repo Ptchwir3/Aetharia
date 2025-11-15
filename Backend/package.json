@@ -1,0 +1,16 @@
+{
+  "name": "aetharia-backend",
+  "version": "1.0.0",
+  "description": "Backend server for AETHARIA – a decentralized multiplayer metaverse",
+  "main": "Src/main.js",
+  "scripts": {
+    "start": "node Src/main.js"
+  },
+  "author": "Josh Nelson",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "uuid": "^9.0.1",
+    "ws": "^8.13.0"
+  }
+}

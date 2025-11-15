@@ -1,0 +1,6 @@
+apiVersion: v2
+name: backend
+description: AETHARIA backend service chart — handles game logic, world sync, and WebSocket comms.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

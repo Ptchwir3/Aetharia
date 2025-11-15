@@ -1,0 +1,17 @@
+{
+  "name": "aetharia-frontend",
+  "version": "1.0.0",
+  "description": "Phaser client for Aetharia metaverse",
+  "main": "Src/main.js",
+  "scripts": {
+    "start": "npx serve ./Public"
+  },
+  "author": "Josh Nelson",
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.60.0"
+  },
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}

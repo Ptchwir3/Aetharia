@@ -1,0 +1,16 @@
+# Helm/values.yaml
+
+backend:
+  image: aetharia-backend
+  tag: latest
+  port: 8080
+  replicaCount: 1
+
+frontend:
+  image: aetharia-frontend
+  tag: latest
+  port: 3000
+  replicaCount: 1
+
+aiAgents:
+  enabled: false  # Flip to true later
