@@ -1,0 +1,71 @@
+# AETHARIA
+
+A Kubernetes-native, decentralized metaverse Proof of Concept designed to run on clusters of Raspberry Pis or x86 servers.  
+A modular, containerized system built for experimentation in distributed world simulation, procedural terrain generation, and AI-driven agents.
+
+---
+
+## 📦 Repository Structure
+
+Aetharia/
+├── AI_Agents/ # AI agent dockerized service
+│ ├── Decision_Engine/
+│ ├── Memory_Core/
+│ ├── Dockerfile
+│
+├── Backend/ # Main backend game server
+│ ├── Src/
+│ ├── Player/
+│ ├── AI_Agents/
+│ ├── Dockerfile
+│ ├── package.json
+│
+├── Frontend/ # Placeholder for future client/UI
+│ ├── Public/
+│ ├── Src/
+│ ├── Dockerfile
+│ ├── package.json
+│
+├── Helm/ # Helm chart for Kubernetes deployment
+│ ├── Chart.yaml
+│ ├── values.yaml
+│ └── Templates/
+│ ├── deployment.yaml
+│ ├── service.yaml
+│ └── ...
+│
+├── K8S/
+│ └── registry-deployment.yaml # Optional local Docker registry
+│
+├── Shared/
+│ ├── Proto/
+│ └── Utils/
+│
+├── LICENSE
+└── README.md
+
+
+---
+
+## 🛠 Prerequisites
+
+You will need:
+
+- Docker
+- Node.js >= 18
+- kubectl
+- Helm v3
+- A container registry (Docker Hub, GHCR, etc.)
+- A Kubernetes cluster (k3s, kubeadm, kind, microk8s, etc.)
+
+---
+
+# 🧪 Local Development (Backend Only)
+
+Run the backend locally without Kubernetes:
+
+```bash
+cd Backend
+npm install
+npm start
+If successful, you’ll see:
