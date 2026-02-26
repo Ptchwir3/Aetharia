@@ -1,0 +1,90 @@
+# docker-compose.yml
+#
+# AETHARIA — Full Stack Deployment
+# ==================================
+# Brings up the entire Aetharia metaverse with a single command:
+#
+#   docker compose up --build
+#
+# Services:
+#   backend  — WebSocket game server (port 8080)
+#   frontend — Phaser browser client (port 3500)
+#
+# After startup, open your browser to:
+#   http://localhost:3500
+#
+# The frontend auto-connects to the backend via the same host.
+# Open multiple browser tabs to see multiplayer in action!
+#
+# To stop:
+#   docker compose down
+#
+# To rebuild after code changes:
+#   docker compose up --build
+
+version: '3.8'
+
+services:
+  # ─────────────────────────────────────────
+  # Backend — WebSocket Game Server
+  # ─────────────────────────────────────────
+  # Handles all game logic: player connections, zone management,
+  # terrain generation, chat, and AI agent coordination.
+  backend:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: aetharia-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - AETHARIA_WORLD_SEED=12345
+      - AETHARIA_HEARTBEAT=30000
+      - AETHARIA_DEBUG=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const ws = new (require('ws'))('ws://localhost:8080'); ws.on('open', () => { ws.close(); process.exit(0); }); ws.on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 3000);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────
+  # Frontend — Browser Game Client
+  # ─────────────────────────────────────────
+  # Serves the Phaser client as static files.
+  # Players open this in their browser to connect.
+  # The client auto-detects the backend URL from the
+  # browser's current host, or you can override with
+  # ?server=host:port in the URL.
+  frontend:
+    build:
+      context: .
+      dockerfile: Frontend/Dockerfile
+    container_name: aetharia-frontend
+    ports:
+      - "3500:3500"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # AI Agents — Autonomous World Inhabitants
+  # ─────────────────────────────────────────
+  # Spawns AI agents that connect to the backend as players.
+  # They explore the world, build structures, and chat.
+  # The world feels alive even when no humans are online.
+  agents:
+    build:
+      context: .
+      dockerfile: AI_Agents/Dockerfile
+    container_name: aetharia-agents
+    environment:
+      - BACKEND_URL=ws://backend:8080
+      - AGENT_TICK_RATE=500
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

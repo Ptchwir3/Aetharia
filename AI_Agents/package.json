@@ -1,0 +1,14 @@
+{
+  "name": "aetharia-agents",
+  "version": "1.0.0",
+  "description": "AI agents that inhabit and develop the Aetharia world",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Josh Nelson",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.13.0"
+  }
+}

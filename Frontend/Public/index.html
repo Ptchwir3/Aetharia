@@ -1,16 +1,133 @@
 <!-- Frontend/Public/index.html -->
+<!--
+  AETHARIA — Game Client
+  =======================
+  Entry point for the Aetharia browser client.
+  Loads Phaser 3 and the game script.
+
+  Usage:
+    Open in browser: http://localhost:3500
+    Connect to specific server: http://localhost:3500?server=192.168.1.68:8080
+
+  The ?server= query parameter lets you point the client at
+  any Aetharia backend instance. If omitted, it connects to
+  the same host the page was served from (ideal for Docker).
+-->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>AETHARIA</title>
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.js"></script>
+
+  <!-- Phaser 3 Game Framework -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+
   <style>
-    body { margin: 0; overflow: hidden; }
-    canvas { display: block; }
+    /* Reset — no margins, no scrollbars, full viewport */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000000;
+      font-family: monospace;
+    }
+
+    /* Game canvas container — fills the entire viewport */
+    #game-container {
+      width: 100%;
+      height: 100%;
+    }
+
+    #game-container canvas {
+      display: block;
+    }
+
+    /* Loading screen — shown while Phaser initializes */
+    #loading-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background-color: #1a1a2e;
+      color: #e0e0e0;
+      z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+
+    #loading-screen h1 {
+      font-size: 48px;
+      letter-spacing: 8px;
+      color: #4CAF50;
+      margin-bottom: 20px;
+      text-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
+    }
+
+    #loading-screen p {
+      font-size: 14px;
+      color: #888;
+    }
+
+    /* Controls help — bottom right */
+    #controls-help {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      font-size: 10px;
+      color: #ffffff88;
+      font-family: monospace;
+      z-index: 1000;
+      text-align: right;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
+
+  <!-- Loading screen (hidden once Phaser starts) -->
+  <div id="loading-screen">
+    <h1>AETHARIA</h1>
+    <p>Initializing world...</p>
+  </div>
+
+  <!-- Phaser renders into this container -->
+  <div id="game-container"></div>
+
+  <!-- Controls reminder -->
+  <div id="controls-help">
+    WASD / Arrows — Move<br>
+    T — Chat<br>
+    Enter — Send<br>
+    Esc — Close Chat
+  </div>
+
+  <!-- Game script -->
   <script src="/Src/main.js"></script>
+
+  <!-- Hide loading screen once Phaser is ready -->
+  <script>
+    // Wait for the first Phaser render frame, then fade out loading screen
+    const checkReady = setInterval(() => {
+      const canvas = document.querySelector('#game-container canvas');
+      if (canvas) {
+        clearInterval(checkReady);
+        const loadingScreen = document.getElementById('loading-screen');
+        loadingScreen.style.opacity = '0';
+        setTimeout(() => loadingScreen.remove(), 500);
+      }
+    }, 100);
+  </script>
+
 </body>
 </html>

@@ -1,21 +1,15 @@
-# Use official Node.js LTS image
-FROM node:18
+FROM node:18-slim
 
-# Set working directory
 WORKDIR /app
 
-# Copy package.json + lock file
-COPY package*.json ./
+COPY Backend/package*.json ./
 
-# Install dependencies
-RUN npm install
+RUN npm install --production
 
-# Copy rest of the backend code
-COPY . .
+COPY Backend/Src ./Src
 
-# Expose the backend port
+COPY Shared /app/Shared
+
 EXPOSE 8080
 
-# Start the server
 CMD ["npm", "start"]
- 

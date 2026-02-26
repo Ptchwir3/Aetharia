@@ -1,0 +1,33 @@
+# .dockerignore
+#
+# Exclude files that shouldn't be copied into Docker images.
+# This keeps builds fast and images small.
+
+# Dependencies (installed inside container)
+**/node_modules
+**/npm-debug.log
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kubernetes/Helm (not needed in containers)
+K8S/
+Helm/
+
+# Test files
+**/test-client.js
+
+# Docs
+README.md
+LICENSE

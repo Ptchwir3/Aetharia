@@ -1,20 +1,13 @@
-# Use official Node.js image
-FROM node:18
+FROM node:18-slim
 
-# Set working directory
 WORKDIR /app
 
-# Copy dependency files
-COPY package*.json ./
+COPY Frontend/package*.json ./
 
-# Install dependencies
-RUN npm install
+RUN npm install --production
 
-# Copy all frontend files
-COPY . .
+COPY Frontend/Public ./Public
 
-# Build: expose default frontend port (can vary)
 EXPOSE 3500
 
-# Run the development server (you can change to "serve Public" if needed)
-CMD ["npx", "serve", "Public"]
+CMD ["npx", "serve", "Public", "-l", "3500"]

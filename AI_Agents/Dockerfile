@@ -1,13 +1,13 @@
-FROM node:18
+FROM node:18-slim
 
 WORKDIR /app
 
-COPY . .
+COPY AI_Agents/package*.json ./
 
-RUN npm install
+RUN npm install --production
+
+COPY AI_Agents/ ./
 
 EXPOSE 7000
 
-CMD ["node", "decision-engine/index.js"]
-
-
+CMD ["npm", "start"]
