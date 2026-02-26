@@ -8,13 +8,10 @@
 //   - Current position and state
 //   - Time (tick count)
 //
-// Returns action objects like:
-//   { type: 'move', x: 5, y: 3 }
-//   { type: 'placeBlock', x: 10, y: -2, tile: 2 }
-//   { type: 'chat', message: 'Hello!' }
-//   { type: 'requestChunk', chunkX: 1, chunkY: 0 }
+// All building is physics-aware: structures must be grounded,
+// blocks can only be placed in air, and agents verify the
+// surface before planning.
 
-// Tile types (must match server constants)
 const TILES = {
   AIR: 0,
   DIRT: 1,
@@ -26,6 +23,7 @@ const TILES = {
   LEAVES: 7,
 };
 
+const SOLID_TILES = [TILES.DIRT, TILES.STONE, TILES.GRASS, TILES.SAND, TILES.WOOD, TILES.LEAVES];
 const CHUNK_SIZE = 32;
 
 class DecisionEngine {
@@ -33,45 +31,32 @@ class DecisionEngine {
     this.personality = personality;
     this.memory = memory;
 
-    // Current goal state
-    this.currentGoal = null;
-    this.goalProgress = 0;
-    this.goalSteps = [];
-
-    // Movement target
-    this.targetX = null;
-    this.targetY = null;
-
-    // Building state
     this.buildingProject = null;
     this.buildQueue = [];
 
-    // Exploration direction
-    this.exploreDirection = this.randomDirection();
+    this.exploreDirection = this.randomHorizontalDirection();
     this.exploreTicks = 0;
+
+    // Cooldowns — prevent constant building
+    this.lastBuildTick = 0;
+    this.lastChatTick = 0;
+    this.structuresBuilt = 0;
   }
 
-  /**
-   * Main decision function — called every tick.
-   * Returns an action object or null (do nothing).
-   *
-   * @param {object} state - Current agent state
-   * @returns {object|null} Action to take
-   */
   decide(state) {
-    const { x, y, tickCount, knownChunks } = state;
+    const { x, y, tickCount } = state;
 
-    // ── Phase 1: First 10 ticks — just explore and get bearings ──
-    if (tickCount < 10) {
+    // Phase 1: First 30 ticks — just explore
+    if (tickCount < 30) {
       return this.decideExplore(state);
     }
 
-    // ── Phase 2: Execute building queue if we have one ──
+    // Phase 2: Execute build queue one step at a time
     if (this.buildQueue.length > 0) {
       return this.executeBuildStep(state);
     }
 
-    // ── Phase 3: Personality-driven decisions ──
+    // Phase 3: Personality-driven
     switch (this.personality) {
       case 'architect':
         return this.decideArchitect(state);
@@ -85,64 +70,43 @@ class DecisionEngine {
   }
 
   // ─────────────────────────────────────────────
-  // Architect Personality
+  // Architect — builds every 300 ticks, max 5 structures
   // ─────────────────────────────────────────────
-  // Plans and builds structures: watchtowers, shelters,
-  // paths, and bridges. Alternates between exploring to
-  // find good spots and building.
 
   decideArchitect(state) {
     const { tickCount } = state;
+    const ticksSinceLastBuild = tickCount - this.lastBuildTick;
 
-    // Every 60 ticks, plan a new structure
-    if (tickCount % 60 === 0 && this.buildQueue.length === 0) {
-      this.planStructure(state);
-      if (this.buildQueue.length > 0) {
+    if (ticksSinceLastBuild > 300 && this.structuresBuilt < 5) {
+      if (this.tryPlanStructure(state)) {
+        this.lastBuildTick = tickCount;
         return { type: 'chat', message: this.getBuildAnnouncement() };
       }
     }
 
-    // Every 120 ticks, chat about what we see
-    if (tickCount % 120 === 0) {
-      return this.randomChat(state);
+    if (tickCount - this.lastChatTick > 250) {
+      this.lastChatTick = tickCount;
+      return null; // Chat handled by Agent class
     }
 
-    // Default: explore
     return this.decideExplore(state);
   }
 
   // ─────────────────────────────────────────────
-  // Explorer Personality
+  // Explorer — mostly moves, rarely builds, requests chunks
   // ─────────────────────────────────────────────
-  // Focuses on movement and discovery. Covers lots of
-  // ground, requests new chunks, occasionally leaves
-  // trail markers.
 
   decideExplorer(state) {
     const { tickCount } = state;
 
-    // Every 80 ticks, change direction
-    if (tickCount % 80 === 0) {
-      this.exploreDirection = this.randomDirection();
-    }
-
-    // Every 100 ticks, chat
     if (tickCount % 100 === 0) {
-      return this.randomChat(state);
+      this.exploreDirection = this.randomHorizontalDirection();
     }
 
-    // Every 40 ticks, leave a trail marker (sand block)
-    if (tickCount % 40 === 0) {
-      const markerPos = this.memory.findSurfaceAt(Math.round(state.x));
-      if (markerPos !== null) {
-        return { type: 'placeBlock', x: Math.round(state.x), y: markerPos - 1, tile: TILES.SAND };
-      }
-    }
-
-    // Request chunks in our direction of travel
-    if (tickCount % 20 === 0) {
+    // Request chunks ahead of movement
+    if (tickCount % 30 === 0) {
       const chunkX = Math.floor(state.x / CHUNK_SIZE) + this.exploreDirection.dx * 2;
-      const chunkY = Math.floor(state.y / CHUNK_SIZE) + this.exploreDirection.dy * 2;
+      const chunkY = Math.floor(state.y / CHUNK_SIZE);
       return { type: 'requestChunk', chunkX, chunkY };
     }
 
@@ -150,163 +114,159 @@ class DecisionEngine {
   }
 
   // ─────────────────────────────────────────────
-  // Builder Personality
+  // Builder — builds every 200 ticks, max 8 structures
   // ─────────────────────────────────────────────
-  // Focused on construction. Builds more frequently
-  // and with more variety than the architect.
 
   decideBuilder(state) {
     const { tickCount } = state;
+    const ticksSinceLastBuild = tickCount - this.lastBuildTick;
 
-    // Every 40 ticks, plan something
-    if (tickCount % 40 === 0 && this.buildQueue.length === 0) {
-      this.planStructure(state);
-      if (this.buildQueue.length > 0) {
+    if (ticksSinceLastBuild > 200 && this.structuresBuilt < 8) {
+      if (this.tryPlanStructure(state)) {
+        this.lastBuildTick = tickCount;
         return { type: 'chat', message: this.getBuildAnnouncement() };
       }
-    }
-
-    // Every 80 ticks, chat
-    if (tickCount % 80 === 0) {
-      return this.randomChat(state);
     }
 
     return this.decideExplore(state);
   }
 
   // ─────────────────────────────────────────────
-  // Exploration Movement
+  // Exploration — walk along the surface horizontally
   // ─────────────────────────────────────────────
 
   decideExplore(state) {
     this.exploreTicks++;
 
-    // Change direction periodically
-    if (this.exploreTicks % 50 === 0) {
-      this.exploreDirection = this.randomDirection();
+    if (this.exploreTicks % 60 === 0) {
+      this.exploreDirection = this.randomHorizontalDirection();
     }
 
-    const newX = state.x + this.exploreDirection.dx * 2;
-    const newY = state.y + this.exploreDirection.dy * 0.5;
+    // Move horizontally, let the server handle Y (agents don't have gravity
+    // but we try to stay near the surface)
+    const targetX = state.x + this.exploreDirection.dx * 2;
 
-    return { type: 'move', x: newX, y: newY };
+    // Try to walk along the surface
+    const surfaceY = this.memory.findSurfaceAt(Math.round(targetX));
+    let targetY = state.y;
+    if (surfaceY !== null) {
+      targetY = surfaceY - 1; // One tile above ground
+    }
+
+    return { type: 'move', x: targetX, y: targetY };
   }
 
   // ─────────────────────────────────────────────
-  // Structure Planning
+  // Structure Planning — physics-aware
   // ─────────────────────────────────────────────
-  // Creates a build queue of block placements that
-  // form recognizable structures.
 
-  planStructure(state) {
+  tryPlanStructure(state) {
     const baseX = Math.round(state.x);
     const surfaceY = this.memory.findSurfaceAt(baseX);
 
-    if (surfaceY === null) {
-      // Don't know the surface here, explore more
-      return;
-    }
+    if (surfaceY === null) return false;
 
+    // Verify this is actually a solid surface with air above
+    const groundTile = this.memory.getTileAt(baseX, surfaceY);
+    const aboveTile = this.memory.getTileAt(baseX, surfaceY - 1);
+
+    if (!SOLID_TILES.includes(groundTile)) return false;
+    if (aboveTile !== null && aboveTile !== TILES.AIR) return false;
+
+    // Find a flat area for building
+    const flat = this.memory.findFlatArea(baseX, 5);
+    if (!flat) return false;
+
+    // Pick a structure appropriate to the terrain
     const structures = [
-      () => this.planWatchtower(baseX, surfaceY),
-      () => this.planShelter(baseX, surfaceY),
-      () => this.planPath(baseX, surfaceY),
-      () => this.planStaircase(baseX, surfaceY),
-      () => this.planWall(baseX, surfaceY),
-      () => this.planPlatform(baseX, surfaceY),
+      () => this.planWatchtower(flat.x, flat.y),
+      () => this.planShelter(flat.x, flat.y),
+      () => this.planPath(flat.x, flat.y),
     ];
 
-    // Pick a random structure to build
     const planner = structures[Math.floor(Math.random() * structures.length)];
     planner();
+
+    // Validate every block in the queue
+    this.buildQueue = this.buildQueue.filter(block => {
+      if (block.tile === TILES.AIR) return true; // Removals are fine
+
+      // Only place blocks in air
+      const existing = this.memory.getTileAt(block.x, block.y);
+      if (existing !== null && existing !== TILES.AIR) return false;
+
+      // Block must be adjacent to a solid tile (grounded)
+      const below = this.memory.getTileAt(block.x, block.y + 1);
+      const left = this.memory.getTileAt(block.x - 1, block.y);
+      const right = this.memory.getTileAt(block.x + 1, block.y);
+
+      const hasSupport = (below !== null && SOLID_TILES.includes(below)) ||
+                         (left !== null && SOLID_TILES.includes(left)) ||
+                         (right !== null && SOLID_TILES.includes(right));
+
+      return hasSupport;
+    });
+
+    if (this.buildQueue.length > 0) {
+      this.structuresBuilt++;
+      return true;
+    }
+    return false;
   }
 
   planWatchtower(baseX, surfaceY) {
     const blocks = [];
-    // Stone pillar, 6 blocks tall
-    for (let dy = 1; dy <= 6; dy++) {
+    // Stone pillar built from ground up (4 blocks, not 6)
+    for (let dy = 1; dy <= 4; dy++) {
       blocks.push({ x: baseX, y: surfaceY - dy, tile: TILES.STONE });
     }
-    // Platform on top (3 wide)
-    for (let dx = -1; dx <= 1; dx++) {
-      blocks.push({ x: baseX + dx, y: surfaceY - 7, tile: TILES.STONE });
-    }
+    // Small platform on top (3 wide)
+    blocks.push({ x: baseX - 1, y: surfaceY - 5, tile: TILES.STONE });
+    blocks.push({ x: baseX, y: surfaceY - 5, tile: TILES.STONE });
+    blocks.push({ x: baseX + 1, y: surfaceY - 5, tile: TILES.STONE });
+
+    // Sort bottom-up so each block has support when placed
+    blocks.sort((a, b) => b.y - a.y);
     this.buildQueue = blocks;
     this.buildingProject = 'watchtower';
   }
 
   planShelter(baseX, surfaceY) {
     const blocks = [];
-    // Floor (5 wide)
+    // Floor (5 wide, at surface)
     for (let dx = 0; dx < 5; dx++) {
-      blocks.push({ x: baseX + dx, y: surfaceY, tile: TILES.STONE });
+      const sy = this.memory.findSurfaceAt(baseX + dx);
+      if (sy !== null && Math.abs(sy - surfaceY) <= 1) {
+        blocks.push({ x: baseX + dx, y: sy, tile: TILES.STONE });
+      }
     }
     // Walls (3 tall on each side)
     for (let dy = 1; dy <= 3; dy++) {
       blocks.push({ x: baseX, y: surfaceY - dy, tile: TILES.WOOD });
       blocks.push({ x: baseX + 4, y: surfaceY - dy, tile: TILES.WOOD });
     }
-    // Roof (5 wide)
+    // Roof
     for (let dx = 0; dx < 5; dx++) {
       blocks.push({ x: baseX + dx, y: surfaceY - 4, tile: TILES.WOOD });
     }
+
+    // Sort bottom-up
+    blocks.sort((a, b) => b.y - a.y);
     this.buildQueue = blocks;
     this.buildingProject = 'shelter';
   }
 
   planPath(baseX, surfaceY) {
     const blocks = [];
-    // 15-block stone path along the surface
-    for (let dx = 0; dx < 15; dx++) {
+    // 8-block stone path along surface (shorter than before)
+    for (let dx = 0; dx < 8; dx++) {
       const sy = this.memory.findSurfaceAt(baseX + dx);
-      if (sy !== null) {
+      if (sy !== null && Math.abs(sy - surfaceY) <= 1) {
         blocks.push({ x: baseX + dx, y: sy, tile: TILES.STONE });
       }
     }
     this.buildQueue = blocks;
     this.buildingProject = 'stone path';
-  }
-
-  planStaircase(baseX, surfaceY) {
-    const blocks = [];
-    // Staircase going down (8 steps)
-    for (let i = 0; i < 8; i++) {
-      blocks.push({ x: baseX + i, y: surfaceY + i, tile: TILES.STONE });
-      // Remove block above for headroom
-      blocks.push({ x: baseX + i, y: surfaceY + i - 1, tile: TILES.AIR });
-      blocks.push({ x: baseX + i, y: surfaceY + i - 2, tile: TILES.AIR });
-    }
-    this.buildQueue = blocks;
-    this.buildingProject = 'staircase to underground';
-  }
-
-  planWall(baseX, surfaceY) {
-    const blocks = [];
-    // Stone wall, 10 wide, 4 tall
-    for (let dx = 0; dx < 10; dx++) {
-      for (let dy = 1; dy <= 4; dy++) {
-        blocks.push({ x: baseX + dx, y: surfaceY - dy, tile: TILES.STONE });
-      }
-    }
-    this.buildQueue = blocks;
-    this.buildingProject = 'defensive wall';
-  }
-
-  planPlatform(baseX, surfaceY) {
-    const blocks = [];
-    // Elevated platform: 4 pillars + flat top
-    const height = 5;
-    // Pillars
-    for (let dy = 1; dy <= height; dy++) {
-      blocks.push({ x: baseX, y: surfaceY - dy, tile: TILES.STONE });
-      blocks.push({ x: baseX + 6, y: surfaceY - dy, tile: TILES.STONE });
-    }
-    // Platform
-    for (let dx = 0; dx <= 6; dx++) {
-      blocks.push({ x: baseX + dx, y: surfaceY - height - 1, tile: TILES.WOOD });
-    }
-    this.buildQueue = blocks;
-    this.buildingProject = 'elevated platform';
   }
 
   // ─────────────────────────────────────────────
@@ -316,17 +276,16 @@ class DecisionEngine {
   executeBuildStep(state) {
     if (this.buildQueue.length === 0) return null;
 
-    const step = this.buildQueue.shift();
+    const step = this.buildQueue[0];
 
-    // Move toward the build site if we're far away
+    // Move closer if too far
     const dist = Math.abs(step.x - state.x) + Math.abs(step.y - state.y);
-    if (dist > 40) {
-      // Too far, move closer first
-      this.buildQueue.unshift(step); // Put it back
+    if (dist > 30) {
       return { type: 'move', x: step.x, y: step.y };
     }
 
-    // Place or remove the block
+    this.buildQueue.shift();
+
     if (step.tile === TILES.AIR) {
       return { type: 'removeBlock', x: step.x, y: step.y };
     }
@@ -337,22 +296,13 @@ class DecisionEngine {
   // Helpers
   // ─────────────────────────────────────────────
 
-  randomDirection() {
-    const directions = [
-      { dx: 1, dy: 0 },   // East
-      { dx: -1, dy: 0 },  // West
-      { dx: 1, dy: 1 },   // Southeast
-      { dx: -1, dy: 1 },  // Southwest
-      { dx: 1, dy: -1 },  // Northeast
-      { dx: -1, dy: -1 }, // Northwest
-    ];
-    return directions[Math.floor(Math.random() * directions.length)];
+  randomHorizontalDirection() {
+    // Only move left or right — no diagonal flying
+    return Math.random() < 0.5 ? { dx: 1, dy: 0 } : { dx: -1, dy: 0 };
   }
 
   randomChat(state) {
-    // Pull from the agent's personality chat messages
-    // (these are passed in from the profile in index.js via the agent)
-    return null; // Chat is triggered from the Agent class directly
+    return null;
   }
 
   getBuildAnnouncement() {
@@ -360,9 +310,6 @@ class DecisionEngine {
       'watchtower': 'Building a watchtower to survey the land!',
       'shelter': 'Constructing a shelter for weary travelers.',
       'stone path': 'Laying a stone path through the terrain.',
-      'staircase to underground': 'Carving stairs down to the caves below.',
-      'defensive wall': 'Raising a stone wall here.',
-      'elevated platform': 'Building an elevated platform for a better view.',
     };
     return announcements[this.buildingProject] || `Building a ${this.buildingProject}...`;
   }

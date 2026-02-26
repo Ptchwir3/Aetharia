@@ -187,12 +187,16 @@ class ChunkRenderer {
 
     const color = TILE_COLORS[tile];
     if (color === null || color === undefined) {
-      // AIR — draw sky color over it
       chunkEntry.graphics.fillStyle(0x87CEEB, 1);
     } else {
       chunkEntry.graphics.fillStyle(color, 1);
     }
     chunkEntry.graphics.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+
+    // Also update the cached tile data so collision detection stays accurate
+    if (chunkEntry.data && chunkEntry.data.tiles) {
+      chunkEntry.data.tiles[localY][localX] = tile;
+    }
   }
 
   // Get tile type at a world tile position (for collision detection)
@@ -201,7 +205,7 @@ class ChunkRenderer {
     const chunkY = Math.floor(worldTileY / CHUNK_SIZE);
     const key = `${chunkX},${chunkY}`;
     const chunkEntry = this.chunks[key];
-    if (!chunkEntry || !chunkEntry.data || !chunkEntry.data.tiles) return 0; // Unknown = air
+    if (!chunkEntry || !chunkEntry.data || !chunkEntry.data.tiles) return 0;
     const localX = ((worldTileX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
     const localY = ((worldTileY % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
     return chunkEntry.data.tiles[localY][localX];
@@ -431,7 +435,6 @@ class HUD {
 // ─────────────────────────────────────────────
 // Profile Picker
 // ─────────────────────────────────────────────
-// Shows on connect — lets player choose name and color.
 
 class ProfilePicker {
   constructor() {
@@ -468,7 +471,6 @@ class ProfilePicker {
       subtitle.style.cssText = 'color: #888; margin-bottom: 20px; font-size: 12px;';
       panel.appendChild(subtitle);
 
-      // Name input
       const nameLabel = document.createElement('div');
       nameLabel.textContent = 'NAME';
       nameLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 4px; letter-spacing: 2px;';
@@ -488,7 +490,6 @@ class ProfilePicker {
       nameInput.addEventListener('blur', () => { nameInput.style.borderColor = '#333'; });
       panel.appendChild(nameInput);
 
-      // Color picker
       const colorLabel = document.createElement('div');
       colorLabel.textContent = 'COLOR';
       colorLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 8px; letter-spacing: 2px;';
@@ -497,7 +498,6 @@ class ProfilePicker {
       const colorGrid = document.createElement('div');
       colorGrid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px;';
 
-      // Preview square
       const preview = document.createElement('div');
       preview.style.cssText = `
         width: 48px; height: 48px; border-radius: 6px;
@@ -529,7 +529,6 @@ class ProfilePicker {
       });
       panel.appendChild(colorGrid);
 
-      // Enter button
       const btn = document.createElement('button');
       btn.textContent = 'ENTER WORLD';
       btn.style.cssText = `
@@ -593,6 +592,8 @@ class AethariaScene extends Phaser.Scene {
     this.lastSentY = 0;
     this.worldConfig = null;
     this.profileReady = false;
+    this.velocityY = 0;
+    this.onGround = false;
   }
 
   preload() {}
@@ -614,6 +615,7 @@ class AethariaScene extends Phaser.Scene {
       left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
       right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
+    this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     this.input.keyboard.on('keydown-T', () => {
       if (!this.chat.isActive() && this.profileReady) {
@@ -638,24 +640,45 @@ class AethariaScene extends Phaser.Scene {
       this.zone = msg.zone;
       this.worldConfig = msg.worldConfig;
 
-      // Render terrain immediately (behind the picker)
       if (msg.chunks) {
         this.chunkRenderer.addChunks(msg.chunks);
       }
 
-      // Show profile picker
       const picker = new ProfilePicker();
       const profile = await picker.show();
 
       this.playerName = profile.name;
       this.playerColor = profile.color;
 
-      // Tell the server our name and color
       this.network.send({ type: 'setProfile', name: profile.name, color: profile.color }, true);
 
-      // Create local player sprite
-      const spawnPixelX = msg.x * TILE_SIZE + TILE_SIZE / 2;
-      const spawnPixelY = msg.y * TILE_SIZE + TILE_SIZE / 2;
+      // Find the surface at spawn X so we start on the ground
+      let spawnTileX = Math.round(msg.x);
+      let spawnTileY = Math.round(msg.y);
+
+      // First check if spawn is inside solid ground — scan UP to find air
+      const spawnTile = this.chunkRenderer.getTileAt(spawnTileX, spawnTileY);
+      if (SOLID_TILES.includes(spawnTile)) {
+        for (let y = spawnTileY; y > spawnTileY - 50; y--) {
+          const tile = this.chunkRenderer.getTileAt(spawnTileX, y);
+          if (!SOLID_TILES.includes(tile)) {
+            spawnTileY = y;
+            break;
+          }
+        }
+      } else {
+        // Spawn is in air — scan DOWN to find ground
+        for (let y = spawnTileY; y < spawnTileY + 50; y++) {
+          const tile = this.chunkRenderer.getTileAt(spawnTileX, y);
+          if (SOLID_TILES.includes(tile)) {
+            spawnTileY = y - 1;
+            break;
+          }
+        }
+      }
+
+      const spawnPixelX = spawnTileX * TILE_SIZE + TILE_SIZE / 2;
+      const spawnPixelY = spawnTileY * TILE_SIZE + TILE_SIZE / 2;
       const colorInt = parseInt(profile.color.replace('#', '0x'), 16);
 
       if (this.playerSprite) this.playerSprite.destroy();
@@ -678,11 +701,13 @@ class AethariaScene extends Phaser.Scene {
       this.playerLabel.setOrigin(0.5, 1);
       this.playerLabel.setDepth(21);
 
-      this.lastSentX = msg.x;
-      this.lastSentY = msg.y;
+      this.lastSentX = spawnTileX;
+      this.lastSentY = spawnTileY;
 
       this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
 
+      this.velocityY = 0;
+      this.onGround = false;
       this.profileReady = true;
       this.chat.addMessage('', `Welcome to Aetharia, ${profile.name}!`, true);
     });
@@ -759,23 +784,77 @@ class AethariaScene extends Phaser.Scene {
       return;
     }
 
-    let vx = 0;
-    let vy = 0;
-    if (this.cursors.left.isDown || this.wasd.left.isDown) vx = -PLAYER_SPEED;
-    if (this.cursors.right.isDown || this.wasd.right.isDown) vx = PLAYER_SPEED;
-    if (this.cursors.up.isDown || this.wasd.up.isDown) vy = -PLAYER_SPEED;
-    if (this.cursors.down.isDown || this.wasd.down.isDown) vy = PLAYER_SPEED;
+    // ── Helper: check if a world tile is solid ──
+    const isSolid = (tX, tY) => {
+      const tile = this.chunkRenderer.getTileAt(Math.floor(tX), Math.floor(tY));
+      return SOLID_TILES.includes(tile);
+    };
 
-    if (vx !== 0 && vy !== 0) {
-      const factor = 1 / Math.SQRT2;
-      vx *= factor;
-      vy *= factor;
+    // ── Unstick: if player is embedded in solid, push up ──
+    const curTileX = (this.playerSprite.x - TILE_SIZE / 2) / TILE_SIZE;
+    const curTileY = (this.playerSprite.y - TILE_SIZE / 2) / TILE_SIZE;
+    if (isSolid(curTileX + 0.5, curTileY + 0.5)) {
+      this.playerSprite.y -= TILE_SIZE;
+      this.velocityY = 0;
+      return; // Skip this frame, try again next
     }
 
+    // ── Horizontal movement ──
+    let vx = 0;
+    if (this.cursors.left.isDown || this.wasd.left.isDown) vx = -PLAYER_SPEED;
+    if (this.cursors.right.isDown || this.wasd.right.isDown) vx = PLAYER_SPEED;
+
     const dx = vx * (delta / 1000);
-    const dy = vy * (delta / 1000);
-    this.playerSprite.x += dx;
-    this.playerSprite.y += dy;
+    let newX = this.playerSprite.x + dx;
+
+    // Horizontal collision — check tile at player's body
+    const playerTileY = (this.playerSprite.y - TILE_SIZE / 2) / TILE_SIZE;
+    const checkX = (newX - TILE_SIZE / 2) / TILE_SIZE + (vx > 0 ? 0.9 : 0);
+    if (vx !== 0 && (isSolid(checkX, playerTileY + 0.1) || isSolid(checkX, playerTileY + 0.9))) {
+      newX = this.playerSprite.x; // Block horizontal movement
+    }
+    this.playerSprite.x = newX;
+
+    // ── Gravity + Jumping ──
+    const jumpPressed = this.cursors.up.isDown || this.wasd.up.isDown || this.spaceBar.isDown;
+    if (jumpPressed && this.onGround) {
+      this.velocityY = JUMP_VELOCITY;
+      this.onGround = false;
+    }
+
+    this.velocityY += GRAVITY * (delta / 1000);
+    if (this.velocityY > MAX_FALL_SPEED) this.velocityY = MAX_FALL_SPEED;
+
+    const dy = this.velocityY * (delta / 1000);
+    let newY = this.playerSprite.y + dy;
+
+    // Vertical collision
+    const newTileX = (this.playerSprite.x - TILE_SIZE / 2) / TILE_SIZE;
+    const leftEdge = newTileX + 0.1;
+    const rightEdge = newTileX + 0.9;
+
+    if (this.velocityY > 0) {
+      // Falling — check below feet
+      const feetCheckY = (newY - TILE_SIZE / 2) / TILE_SIZE + 1.0;
+      if (isSolid(leftEdge, feetCheckY) || isSolid(rightEdge, feetCheckY)) {
+        // Snap to top of the tile we hit
+        const landTileY = Math.floor(feetCheckY);
+        newY = landTileY * TILE_SIZE - TILE_SIZE / 2;
+        this.velocityY = 0;
+        this.onGround = true;
+      } else {
+        this.onGround = false;
+      }
+    } else if (this.velocityY < 0) {
+      // Jumping — check above head
+      const headCheckY = (newY - TILE_SIZE / 2) / TILE_SIZE;
+      if (isSolid(leftEdge, headCheckY) || isSolid(rightEdge, headCheckY)) {
+        const bonkTileY = Math.floor(headCheckY) + 1;
+        newY = bonkTileY * TILE_SIZE + TILE_SIZE / 2;
+        this.velocityY = 0;
+      }
+    }
+    this.playerSprite.y = newY;
 
     // Move name label with player
     if (this.playerLabel) {
