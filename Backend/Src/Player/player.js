@@ -11,6 +11,9 @@ function createPlayer(id, options = {}) {
     // Profile
     name: options.name || id.substring(0, 6),
     color: options.color || '#FF5722',
+    // Physics
+    velocityY: 0,
+    onGround: false,
     // Timestamps
     connectedAt: Date.now(),
     lastMessageAt: Date.now(),
