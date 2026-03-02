@@ -1,72 +1,66 @@
-# AETHARIA → OASIS: 5-Day Build Plan
+# AETHARIA → OASIS: 6-Day Build Plan
 
 > Transform Aetharia from a multiplayer terrain demo into a functioning OASIS-style metaverse MVP.
 > Each day builds on the previous. Follow in order.
 
 ---
 
-## Day 1: Persistent Identity & Authentication
+## Day 1: Persistent Identity & Authentication ✅
 
 **Goal:** Players have accounts that survive across sessions.
 
 ### Backend
 
-- [ ] Install `better-sqlite3` dependency
-- [ ] Create `Backend/Src/Database/db.js` — initialize SQLite, create tables on first run
-- [ ] Player table schema:
-  ```
+- [x] Install `better-sqlite3` dependency
+- [x] Create `Backend/Src/Database/db.js` — initialize SQLite, create tables on first run
+- [x] Player table schema:
+```
   players: id INTEGER PRIMARY KEY, username TEXT UNIQUE, password_hash TEXT,
            color TEXT, x REAL, y REAL, zone TEXT, inventory TEXT,
            credits INTEGER DEFAULT 100, created_at TEXT, last_login TEXT
-  ```
-- [ ] Create `Backend/Src/Handlers/handleAuth.js`:
-  - [ ] `register` handler — validate username (3-16 chars, alphanumeric), hash password (bcrypt), create record, return session token
-  - [ ] `login` handler — verify password, load saved state, return session token + saved position/inventory/credits
-- [ ] Update `main.js` connection flow:
-  - [ ] On connect: send `authRequired` message instead of `welcome`
-  - [ ] Wait for `register` or `login` message before creating player
-  - [ ] On successful auth: load saved state, assign to zone, send `welcome` with full state
-- [ ] Add auto-save: save player state to DB every 60 seconds
-- [ ] On disconnect: save current position, inventory, credits to DB
-- [ ] Add `credits` field to player object in `player.js`
-- [ ] Include `credits` in `welcome` message payload
-- [ ] Add `SESSION_SECRET` env var for signing tokens
+```
+- [x] Create `Backend/Src/Handlers/handleAuth.js`:
+  - [x] `register` handler — validate username (3-16 chars, alphanumeric), hash password (bcrypt), create record
+  - [x] `login` handler — verify password, load saved state, return saved position/inventory/credits
+- [x] Update `main.js` connection flow:
+  - [x] On connect: send `authRequired` message instead of `welcome`
+  - [x] Wait for `register` or `login` message before creating player
+  - [x] On successful auth: load saved state, assign to zone, send `welcome` with full state
+- [x] Add auto-save: save player state to DB every 60 seconds
+- [x] On disconnect: save current position, inventory, credits to DB
+- [x] Add `credits` field to player object in `player.js`
+- [x] Include `credits` in `welcome` message payload
+- [ ] Add `SESSION_SECRET` env var for signing tokens (deferred to Day 3 — needed for JWT portals)
 
 ### Frontend
 
-- [ ] Replace `ProfilePicker` class with `AuthScreen` class:
-  - [ ] Two modes: Login and Register
-  - [ ] Register: username, password, confirm password, color picker
-  - [ ] Login: username, password
-  - [ ] Toggle link between "Already have an account?" / "Create new account"
-  - [ ] Error display (username taken, wrong password, etc.)
-  - [ ] Same visual style as current profile picker (dark theme, cyan accents)
-- [ ] Update welcome handler to use saved state from server (position, color, credits)
-- [ ] Add credits display to HUD
-- [ ] Store auth token in sessionStorage for reconnection within same tab
+- [x] Replace `ProfilePicker` class with `AuthScreen` class:
+  - [x] Two modes: Login and Register
+  - [x] Register: username, password, confirm password, color picker
+  - [x] Login: username, password
+  - [x] Toggle link between "Already have an account?" / "Create new account"
+  - [x] Error display (username taken, wrong password, etc.)
+  - [x] Same visual style as current profile picker (dark theme, cyan accents)
+- [x] Update welcome handler to use saved state from server (position, color, credits)
+- [x] Add credits display to HUD
+- [x] Logout functionality (L key — disconnect, reconnect, show auth screen)
+- [ ] Store auth token in sessionStorage for reconnection within same tab (deferred to Day 3)
 
 ### Docker
 
-- [ ] Add SQLite volume to `docker-compose.yml`:
-  ```yaml
-  volumes:
-    aetharia-data:
-  # Mount on backend:
-  volumes:
-    - aetharia-data:/app/data
-  ```
-- [ ] Set `DATABASE_PATH=/app/data/aetharia.db` env var
+- [x] Add SQLite volume to `docker-compose.yml` (`aetharia-data` volume)
+- [x] Set `DATABASE_PATH=/app/data/aetharia.db` env var
 
 ### Testing
 
-- [ ] Register a new account → spawns with default state
-- [ ] Disconnect → reconnect → login → same position and color
-- [ ] Try duplicate username → error
-- [ ] Try wrong password → error
-- [ ] Two players logged in simultaneously → both work independently
+- [x] Register a new account → spawns with default state
+- [x] Disconnect → reconnect → login → same position and color
+- [x] Try duplicate username → error
+- [x] Try wrong password → error (tested via auth handler)
+- [ ] Two players logged in simultaneously → both work independently (not yet tested)
 
 ### Definition of Done
-**Register, log out, close browser, come back, log in — same character, same position, same color, same credits.**
+**Register, log out, close browser, come back, log in — same character, same position, same color, same credits.** ✅
 
 ---
 
@@ -131,16 +125,16 @@
 ### Shared Infrastructure
 
 - [ ] Create `Shared/worldConfig.js` — world configuration loader:
-  ```javascript
+```javascript
   { id: "origin", name: "Origin", seed: 12345, gravity: 30, spawnX: 0, spawnY: 0, description: "The starting world" }
-  ```
+```
 - [ ] Create `Shared/portalRegistry.json` — defines portal connections:
-  ```json
+```json
   [
     { "worldId": "origin", "x": 50, "y": -5, "targetWorld": "caverns", "targetUrl": "ws://world-caverns:8080" },
     { "worldId": "caverns", "x": 0, "y": -5, "targetWorld": "origin", "targetUrl": "ws://world-origin:8080" }
   ]
-  ```
+```
 - [ ] Add new tile type `PORTAL = 8` to `Shared/Utils/constants.js`
 - [ ] Add portal color to frontend `TILE_COLORS`: `8: 0x9C27B0` (purple)
 
@@ -175,7 +169,7 @@
 ### Docker Compose
 
 - [ ] Update `docker-compose.yml` with multiple world backends:
-  ```yaml
+```yaml
   world-origin:
     build: { context: ., dockerfile: Backend/Dockerfile }
     environment:
@@ -197,7 +191,7 @@
       - aetharia-data:/app/data
       - ./worlds:/app/config
     ports: ["8081:8080"]
-  ```
+```
 - [ ] Create `worlds/` directory with config JSON files:
   - [ ] `origin.json` — seed 12345, standard gravity
   - [ ] `caverns.json` — seed 99999, deeper caves, more stone
@@ -226,10 +220,10 @@
 ### Backend
 
 - [ ] Block value table in constants:
-  ```javascript
+```javascript
   BLOCK_VALUES: { 1: 1, 2: 2, 3: 1, 5: 1, 6: 3, 7: 2 }
   // dirt=1, stone=2, grass=1, sand=1, wood=3, leaves=2
-  ```
+```
 - [ ] Discovery bonus: first time a player enters a new chunk, award 5 credits
   - [ ] Track discovered chunks per player in DB: `discovered_chunks TEXT` (JSON array of chunk keys)
 - [ ] New message handlers:
@@ -302,11 +296,11 @@
   - [ ] `POST /api/worlds` — create a new world: `{ name, seed, description, gravity }` → writes config JSON, registers in world directory DB
   - [ ] `GET /api/worlds/:id/status` — health check for a specific world
 - [ ] World directory table in SQLite:
-  ```
+```
   worlds: id TEXT PRIMARY KEY, name TEXT, description TEXT, seed INTEGER,
           gravity REAL, creator TEXT, websocket_url TEXT,
           created_at TEXT, player_count INTEGER DEFAULT 0
-  ```
+```
 - [ ] Update player count: each world backend reports its count to the DB every 30 seconds
 - [ ] Auto-generate return portal in new worlds (links back to Origin)
 - [ ] World creation spawns a new Docker container (stretch goal) OR pre-allocates a pool of world slots
@@ -377,9 +371,73 @@
 
 ---
 
+## Day 6: Visual Facelift — Tileset & Sprite System
+
+**Goal:** Replace colored rectangles with pixel art tilesets and character sprites. Make it look like a real game.
+
+### Tileset
+
+- [ ] Source or create a 16x16 or 32x32 pixel art tileset (Terraria/Stardew style):
+  - [ ] Dirt (with edge variants)
+  - [ ] Stone (with edge variants)
+  - [ ] Grass (top surface + sides)
+  - [ ] Sand
+  - [ ] Wood (trunk)
+  - [ ] Leaves (canopy)
+  - [ ] Water (animated or tinted)
+  - [ ] Portal (animated glow)
+- [ ] Pack tiles into a spritesheet (single PNG + JSON atlas)
+- [ ] Add tileset to `Frontend/Public/Assets/`
+
+### Terrain Rendering Upgrade
+
+- [ ] Replace `fillRect` tile rendering with spritesheet-based rendering in `ChunkRenderer`:
+  - [ ] Load tileset as Phaser spritesheet in `preload()`
+  - [ ] Map tile type → sprite frame index
+  - [ ] Auto-tiling: select correct frame based on neighboring tiles (e.g., grass only on top of dirt, stone edges)
+  - [ ] Water tiles: apply alpha or tint for transparency effect
+- [ ] Background parallax layer (sky gradient or distant mountains)
+- [ ] Smooth chunk transitions (no visible seam between chunks)
+
+### Character Sprites
+
+- [ ] Create or source simple character spritesheet:
+  - [ ] Idle frame (front-facing)
+  - [ ] Walk left/right (2-4 frames)
+  - [ ] Jump frame
+  - [ ] Tinted by player color selection
+- [ ] Replace player rectangles with animated sprites:
+  - [ ] Idle animation when standing still
+  - [ ] Walk animation when moving horizontally
+  - [ ] Jump frame when airborne
+  - [ ] Flip sprite based on direction
+- [ ] Apply same sprite system to AI agent avatars
+
+### UI Polish
+
+- [ ] Hotbar styled with tileset icons instead of color swatches
+- [ ] Chat box background polish (rounded corners, slight transparency)
+- [ ] HUD background polish (match game aesthetic)
+- [ ] Loading screen with Aetharia logo/art
+- [ ] Particle effects: block break particles, landing dust
+
+### Testing
+
+- [ ] All tile types render with correct sprites
+- [ ] Auto-tiling looks correct (grass on top of dirt, stone edges blend)
+- [ ] Character walks with animation, jumps with jump frame
+- [ ] AI agents use same sprite system
+- [ ] Performance: no framerate drop from sprite rendering vs rectangles
+- [ ] Tileset renders correctly across chunk boundaries
+
+### Definition of Done
+**The world looks like a pixel art game. Terrain has proper tiles with edge blending, players are animated sprites, and the UI feels polished and cohesive.**
+
+---
+
 ## Post-MVP: The Road to the OASIS
 
-After completing the 5-day plan, these are the next milestones:
+After completing the 6-day plan, these are the next milestones:
 
 - [ ] **Rookery LLM Integration** — AI agents powered by distributed inference across Pi cluster
 - [ ] **3D Client** — Unity or Unreal client connecting to the same backend
@@ -395,4 +453,3 @@ After completing the 5-day plan, these are the next milestones:
 ---
 
 *"Going outside is highly overrated." — Ernest Cline, Ready Player One*
-
