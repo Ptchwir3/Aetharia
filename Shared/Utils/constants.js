@@ -142,6 +142,14 @@ const MSG = {
   PLACE_BLOCK: 'placeBlock',     // Place a block in the world
   REMOVE_BLOCK: 'removeBlock',   // Remove (mine) a block from the world
   SET_PROFILE: 'setProfile',     // Set player name and color
+  INVENTORY_UPDATE: 'inventoryUpdate', // Server sends updated inventory
+
+  // Auth
+  AUTH_REQUIRED: 'authRequired', // Server asks client to log in
+  REGISTER: 'register',         // Client registers new account
+  LOGIN: 'login',               // Client logs in
+  AUTH_ERROR: 'authError',      // Auth failed
+  AUTH_SUCCESS: 'authSuccess',  // Auth succeeded (followed by welcome)
 };
 
 // ─────────────────────────────────────────────

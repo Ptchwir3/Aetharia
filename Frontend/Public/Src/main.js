@@ -14,7 +14,7 @@
 // Configuration
 // ─────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
-const WS_HOST = params.get('server') || window.location.host || 'localhost:8080';
+const WS_HOST = params.get('server') || window.location.hostname + ':8080';
 const WS_URL = `ws://${WS_HOST}`;
 
 const SEND_RATE = 50;
@@ -66,6 +66,7 @@ class NetworkManager {
     this.lastSendTime = 0;
     this.reconnectDelay = 1000;
     this.maxReconnectDelay = 30000;
+    this.intentionalClose = false;
   }
 
   connect() {
@@ -90,8 +91,11 @@ class NetworkManager {
     this.ws.onclose = () => {
       console.log('🔌 Disconnected');
       this.connected = false;
-      setTimeout(() => this.connect(), this.reconnectDelay);
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+      if (!this.intentionalClose) {
+        setTimeout(() => this.connect(), this.reconnectDelay);
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+      }
+      this.intentionalClose = false;
     };
 
     this.ws.onerror = (err) => {
@@ -424,6 +428,7 @@ class HUD {
     const dot = data.connected ? '🟢' : '🔴';
     const lines = [
       `${dot} ${data.playerName || 'Player'}`,
+      `💰 ${data.credits || 0} credits`,
       `Pos: ${Math.round(data.x)}, ${Math.round(data.y)}`,
       `Zone: ${data.zone || '...'}`,
       `Players: ${data.playerCount}`,
@@ -436,10 +441,12 @@ class HUD {
 // Profile Picker
 // ─────────────────────────────────────────────
 
-class ProfilePicker {
-  constructor() {
+class AuthScreen {
+  constructor(network) {
+    this.network = network;
     this.resolve = null;
     this.selectedColor = COLOR_PRESETS[0].hex;
+    this.mode = 'login'; // 'login' or 'register'
   }
 
   show() {
@@ -466,46 +473,104 @@ class ProfilePicker {
       title.style.cssText = 'color: #0ff; margin: 0 0 6px 0; font-size: 22px; letter-spacing: 3px;';
       panel.appendChild(title);
 
-      const subtitle = document.createElement('div');
-      subtitle.textContent = 'Choose your identity';
-      subtitle.style.cssText = 'color: #888; margin-bottom: 20px; font-size: 12px;';
-      panel.appendChild(subtitle);
+      this.subtitle = document.createElement('div');
+      this.subtitle.textContent = 'Welcome back';
+      this.subtitle.style.cssText = 'color: #888; margin-bottom: 20px; font-size: 12px;';
+      panel.appendChild(this.subtitle);
 
+      // Error display
+      this.errorDiv = document.createElement('div');
+      this.errorDiv.style.cssText = `
+        color: #ff4444; font-size: 12px; margin-bottom: 12px;
+        display: none; background: rgba(255,0,0,0.1);
+        padding: 8px; border-radius: 4px;
+      `;
+      panel.appendChild(this.errorDiv);
+
+      // Username
       const nameLabel = document.createElement('div');
-      nameLabel.textContent = 'NAME';
+      nameLabel.textContent = 'USERNAME';
       nameLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 4px; letter-spacing: 2px;';
       panel.appendChild(nameLabel);
 
-      const nameInput = document.createElement('input');
-      nameInput.type = 'text';
-      nameInput.maxLength = 16;
-      nameInput.placeholder = 'Enter your name...';
-      nameInput.style.cssText = `
+      this.nameInput = document.createElement('input');
+      this.nameInput.type = 'text';
+      this.nameInput.maxLength = 16;
+      this.nameInput.placeholder = 'Enter username...';
+      this.nameInput.style.cssText = `
         width: 100%; box-sizing: border-box;
         background: #0d0d1a; color: #fff; border: 1px solid #333;
         padding: 10px; font-family: monospace; font-size: 16px;
-        border-radius: 6px; outline: none; margin-bottom: 16px;
+        border-radius: 6px; outline: none; margin-bottom: 12px;
       `;
-      nameInput.addEventListener('focus', () => { nameInput.style.borderColor = '#0ff'; });
-      nameInput.addEventListener('blur', () => { nameInput.style.borderColor = '#333'; });
-      panel.appendChild(nameInput);
+      this.nameInput.addEventListener('focus', () => { this.nameInput.style.borderColor = '#0ff'; });
+      this.nameInput.addEventListener('blur', () => { this.nameInput.style.borderColor = '#333'; });
+      panel.appendChild(this.nameInput);
+
+      // Password
+      const passLabel = document.createElement('div');
+      passLabel.textContent = 'PASSWORD';
+      passLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 4px; letter-spacing: 2px;';
+      panel.appendChild(passLabel);
+
+      this.passInput = document.createElement('input');
+      this.passInput.type = 'password';
+      this.passInput.maxLength = 64;
+      this.passInput.placeholder = 'Enter password...';
+      this.passInput.style.cssText = `
+        width: 100%; box-sizing: border-box;
+        background: #0d0d1a; color: #fff; border: 1px solid #333;
+        padding: 10px; font-family: monospace; font-size: 16px;
+        border-radius: 6px; outline: none; margin-bottom: 12px;
+      `;
+      this.passInput.addEventListener('focus', () => { this.passInput.style.borderColor = '#0ff'; });
+      this.passInput.addEventListener('blur', () => { this.passInput.style.borderColor = '#333'; });
+      panel.appendChild(this.passInput);
+
+      // Confirm password (register only)
+      this.confirmSection = document.createElement('div');
+      this.confirmSection.style.cssText = 'display: none;';
+
+      const confirmLabel = document.createElement('div');
+      confirmLabel.textContent = 'CONFIRM PASSWORD';
+      confirmLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 4px; letter-spacing: 2px;';
+      this.confirmSection.appendChild(confirmLabel);
+
+      this.confirmInput = document.createElement('input');
+      this.confirmInput.type = 'password';
+      this.confirmInput.maxLength = 64;
+      this.confirmInput.placeholder = 'Confirm password...';
+      this.confirmInput.style.cssText = `
+        width: 100%; box-sizing: border-box;
+        background: #0d0d1a; color: #fff; border: 1px solid #333;
+        padding: 10px; font-family: monospace; font-size: 16px;
+        border-radius: 6px; outline: none; margin-bottom: 12px;
+      `;
+      this.confirmInput.addEventListener('focus', () => { this.confirmInput.style.borderColor = '#0ff'; });
+      this.confirmInput.addEventListener('blur', () => { this.confirmInput.style.borderColor = '#333'; });
+      this.confirmInput.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') this.submit(); });
+      this.confirmSection.appendChild(this.confirmInput);
+      panel.appendChild(this.confirmSection);
+
+      // Color picker (hidden in login mode, shown in register)
+      this.colorSection = document.createElement('div');
+      this.colorSection.style.cssText = 'display: none;';
 
       const colorLabel = document.createElement('div');
       colorLabel.textContent = 'COLOR';
       colorLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 8px; letter-spacing: 2px;';
-      panel.appendChild(colorLabel);
-
-      const colorGrid = document.createElement('div');
-      colorGrid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 20px;';
+      this.colorSection.appendChild(colorLabel);
 
       const preview = document.createElement('div');
       preview.style.cssText = `
         width: 48px; height: 48px; border-radius: 6px;
-        border: 2px solid #fff; margin: 0 auto 16px auto;
-        background: ${this.selectedColor};
-        transition: background 0.15s;
+        border: 2px solid #fff; margin: 0 auto 12px auto;
+        background: ${this.selectedColor}; transition: background 0.15s;
       `;
-      panel.appendChild(preview);
+      this.colorSection.appendChild(preview);
+
+      const colorGrid = document.createElement('div');
+      colorGrid.style.cssText = 'display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 16px;';
 
       COLOR_PRESETS.forEach((preset) => {
         const swatch = document.createElement('div');
@@ -514,9 +579,7 @@ class ProfilePicker {
           background: ${preset.hex}; border: 2px solid transparent;
           transition: border-color 0.15s, transform 0.1s;
         `;
-        if (preset.hex === this.selectedColor) {
-          swatch.style.borderColor = '#fff';
-        }
+        if (preset.hex === this.selectedColor) swatch.style.borderColor = '#fff';
         swatch.addEventListener('click', () => {
           this.selectedColor = preset.hex;
           preview.style.background = preset.hex;
@@ -527,37 +590,116 @@ class ProfilePicker {
         swatch.addEventListener('mouseleave', () => { swatch.style.transform = 'scale(1)'; });
         colorGrid.appendChild(swatch);
       });
-      panel.appendChild(colorGrid);
+      this.colorSection.appendChild(colorGrid);
+      panel.appendChild(this.colorSection);
 
-      const btn = document.createElement('button');
-      btn.textContent = 'ENTER WORLD';
-      btn.style.cssText = `
+      // Submit button
+      this.btn = document.createElement('button');
+      this.btn.textContent = 'LOG IN';
+      this.btn.style.cssText = `
         width: 100%; padding: 12px; background: #0ff; color: #000;
         border: none; border-radius: 6px; font-family: monospace;
         font-size: 14px; font-weight: bold; cursor: pointer;
         letter-spacing: 2px; transition: background 0.15s;
+        margin-bottom: 12px;
       `;
-      btn.addEventListener('mouseenter', () => { btn.style.background = '#00e5ff'; });
-      btn.addEventListener('mouseleave', () => { btn.style.background = '#0ff'; });
+      this.btn.addEventListener('mouseenter', () => { this.btn.style.background = '#00e5ff'; });
+      this.btn.addEventListener('mouseleave', () => { this.btn.style.background = '#0ff'; });
+      this.btn.addEventListener('click', () => this.submit());
+      panel.appendChild(this.btn);
 
-      const submit = () => {
-        const name = nameInput.value.trim().substring(0, 16) || 'Traveler';
-        this.overlay.remove();
-        resolve({ name, color: this.selectedColor });
+      // Toggle link
+      this.toggleLink = document.createElement('div');
+      this.toggleLink.innerHTML = 'No account? <span style="color:#0ff;cursor:pointer;text-decoration:underline;">Create one</span>';
+      this.toggleLink.style.cssText = 'color: #666; font-size: 11px;';
+      this.toggleLink.querySelector('span').addEventListener('click', () => this.toggleMode());
+      panel.appendChild(this.toggleLink);
+
+      // Listen for auth errors from server
+      this.authErrorHandler = (msg) => {
+        this.showError(msg.message);
+        this.btn.disabled = false;
+        this.btn.textContent = this.mode === 'login' ? 'LOG IN' : 'CREATE ACCOUNT';
       };
+      this.network.on('authError', this.authErrorHandler);
 
-      btn.addEventListener('click', submit);
-      nameInput.addEventListener('keydown', (e) => {
+      // Listen for welcome (auth succeeded)
+      this.welcomeHandler = (msg) => {
+        this.overlay.remove();
+        resolve(msg);
+      };
+      this.network.on('welcome', this.welcomeHandler);
+
+      // Handle enter key on inputs
+      const handleEnter = (e) => {
         e.stopPropagation();
-        if (e.key === 'Enter') submit();
-      });
-      panel.appendChild(btn);
+        if (e.key === 'Enter') this.submit();
+      };
+      this.nameInput.addEventListener('keydown', handleEnter);
+      this.passInput.addEventListener('keydown', handleEnter);
 
       this.overlay.appendChild(panel);
       document.body.appendChild(this.overlay);
-
-      setTimeout(() => nameInput.focus(), 100);
+      setTimeout(() => this.nameInput.focus(), 100);
     });
+  }
+
+  toggleMode() {
+    if (this.mode === 'login') {
+      this.mode = 'register';
+      this.subtitle.textContent = 'Create your identity';
+      this.btn.textContent = 'CREATE ACCOUNT';
+      this.colorSection.style.display = 'block';
+      this.confirmSection.style.display = 'block';
+      this.toggleLink.innerHTML = 'Already have an account? <span style="color:#0ff;cursor:pointer;text-decoration:underline;">Log in</span>';
+    } else {
+      this.mode = 'login';
+      this.subtitle.textContent = 'Welcome back';
+      this.btn.textContent = 'LOG IN';
+      this.colorSection.style.display = 'none';
+      this.confirmSection.style.display = 'none';
+      this.toggleLink.innerHTML = 'No account? <span style="color:#0ff;cursor:pointer;text-decoration:underline;">Create one</span>';
+    }
+    this.toggleLink.querySelector('span').addEventListener('click', () => this.toggleMode());
+    this.hideError();
+  }
+
+  submit() {
+    const username = this.nameInput.value.trim();
+    const password = this.passInput.value;
+
+    if (!username || username.length < 3) {
+      this.showError('Username must be at least 3 characters');
+      return;
+    }
+    if (!password || password.length < 4) {
+      this.showError('Password must be at least 4 characters');
+      return;
+    }
+
+    if (this.mode === 'register' && password !== this.confirmInput.value) {
+      this.showError('Passwords do not match');
+      return;
+    }
+
+    this.hideError();
+    this.btn.disabled = true;
+    this.btn.textContent = this.mode === 'login' ? 'LOGGING IN...' : 'CREATING...';
+
+    if (this.mode === 'login') {
+      this.network.send({ type: 'login', username, password }, true);
+    } else {
+      this.network.send({ type: 'register', username, password, color: this.selectedColor }, true);
+    }
+  }
+
+  showError(msg) {
+    this.errorDiv.textContent = msg;
+    this.errorDiv.style.display = 'block';
+  }
+
+  hideError() {
+    this.errorDiv.style.display = 'none';
   }
 }
 
@@ -592,6 +734,7 @@ class AethariaScene extends Phaser.Scene {
     this.lastSentY = 0;
     this.worldConfig = null;
     this.profileReady = false;
+    this.playerCredits = 0;
     this.velocityY = 0;
     this.onGround = false;
   }
@@ -617,6 +760,13 @@ class AethariaScene extends Phaser.Scene {
     };
     this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
+    // Logout button (L key)
+    this.input.keyboard.on('keydown-L', () => {
+      if (!this.chat.isActive() && this.profileReady) {
+        this.logout();
+      }
+    });
+
     this.input.keyboard.on('keydown-T', () => {
       if (!this.chat.isActive() && this.profileReady) {
         this.chat.showInput();
@@ -634,7 +784,85 @@ class AethariaScene extends Phaser.Scene {
 
   registerNetworkHandlers() {
     // ── Welcome ──
-    this.network.on('welcome', async (msg) => {
+    // ── Auth Required — show login/register screen ──
+    this.network.on('authRequired', () => {
+      console.log('🔐 Server requires authentication');
+      const authScreen = new AuthScreen(this.network);
+      authScreen.show().then((msg) => {
+        this.handleWelcome(msg);
+      });
+    });
+
+    this.network.on('welcome', (msg) => {
+      // If we get welcome directly (shouldn't happen with auth), handle it
+      if (!this.playerId) this.handleWelcome(msg);
+    });
+
+    // ── Existing Players ──
+    this.network.on('existingPlayers', (msg) => {
+      for (const p of msg.players) {
+        this.playerManager.addPlayer(p.id, p.x, p.y, p.name, p.color);
+      }
+    });
+    // ── Player Joined ──
+    this.network.on('playerJoined', (msg) => {
+      this.playerManager.addPlayer(msg.id, msg.x, msg.y, msg.name, msg.color);
+      const displayName = msg.name || msg.id.substring(0, 6);
+      this.chat.addMessage('', `${displayName} joined`, true);
+    });
+    // ── Player Left ──
+    this.network.on('playerLeft', (msg) => {
+      const displayName = msg.name || msg.id.substring(0, 6);
+      this.playerManager.removePlayer(msg.id);
+      this.chat.addMessage('', `${displayName} left`, true);
+    });
+    // ── Player Moved ──
+    this.network.on('playerMoved', (msg) => {
+      this.playerManager.updatePlayer(msg.id, msg.x, msg.y);
+    });
+    // ── Profile Update ──
+    this.network.on('profileUpdate', (msg) => {
+      this.playerManager.updateProfile(msg.id, msg.name, msg.color);
+    });
+    // ── Chat Message ──
+    this.network.on('chatMessage', (msg) => {
+      this.chat.addMessage(msg.id.substring(0, 6), msg.message);
+    });
+    // ── Chunk Data ──
+    this.network.on('chunkData', (msg) => {
+      this.chunkRenderer.addChunk(msg.chunk);
+    });
+    // ── Block Update ──
+    this.network.on('blockUpdate', (msg) => {
+      this.blockHandler.handle(msg);
+    });
+
+    // ── Position Correction (server-side gravity) ──
+    this.network.on('positionCorrection', (msg) => {
+      if (!this.playerSprite) return;
+      const serverPixelY = msg.y * TILE_SIZE + TILE_SIZE / 2;
+      this.playerSprite.y = serverPixelY;
+      this.onGround = msg.onGround;
+      if (msg.onGround) this.velocityY = 0;
+    });
+
+    // ── Zone Changed ──
+    this.network.on('zoneChanged', (msg) => {
+      this.zone = msg.zone;
+      this.playerManager.clear();
+      this.chat.addMessage('', `Entered ${msg.zone}`, true);
+    });
+    // ── Error ──
+    this.network.on('error', (msg) => {
+      console.warn(`⚠️ Server error: ${msg.message}`);
+    });
+    // ── Interact Result ──
+    this.network.on('interactResult', (msg) => {
+      this.chat.addMessage('', msg.message, true);
+    });
+  }
+
+  handleWelcome(msg) {
       console.log(`🎉 Welcome! ID: ${msg.id}, Zone: ${msg.zone}`);
       this.playerId = msg.id;
       this.zone = msg.zone;
@@ -644,13 +872,9 @@ class AethariaScene extends Phaser.Scene {
         this.chunkRenderer.addChunks(msg.chunks);
       }
 
-      const picker = new ProfilePicker();
-      const profile = await picker.show();
-
-      this.playerName = profile.name;
-      this.playerColor = profile.color;
-
-      this.network.send({ type: 'setProfile', name: profile.name, color: profile.color }, true);
+      this.playerName = msg.name;
+      this.playerColor = msg.color;
+      this.playerCredits = msg.credits || 0;
 
       // Find the surface at spawn X so we start on the ground
       let spawnTileX = Math.round(msg.x);
@@ -679,7 +903,7 @@ class AethariaScene extends Phaser.Scene {
 
       const spawnPixelX = spawnTileX * TILE_SIZE + TILE_SIZE / 2;
       const spawnPixelY = spawnTileY * TILE_SIZE + TILE_SIZE / 2;
-      const colorInt = parseInt(profile.color.replace('#', '0x'), 16);
+      const colorInt = parseInt(this.playerColor.replace('#', '0x'), 16);
 
       if (this.playerSprite) this.playerSprite.destroy();
       if (this.playerLabel) this.playerLabel.destroy();
@@ -691,7 +915,7 @@ class AethariaScene extends Phaser.Scene {
       );
       this.playerSprite.setDepth(20);
 
-      this.playerLabel = this.add.text(spawnPixelX, spawnPixelY - TILE_SIZE / 2 - 2, profile.name, {
+      this.playerLabel = this.add.text(spawnPixelX, spawnPixelY - TILE_SIZE / 2 - 2, this.playerName, {
         fontSize: '11px',
         fontFamily: 'monospace',
         color: '#ffffff',
@@ -709,71 +933,28 @@ class AethariaScene extends Phaser.Scene {
       this.velocityY = 0;
       this.onGround = false;
       this.profileReady = true;
-      this.chat.addMessage('', `Welcome to Aetharia, ${profile.name}!`, true);
-    });
+      this.chat.addMessage('', `Welcome to Aetharia, ${this.playerName}!`, true);
+  }
+  logout() {
+    // Disconnect and show auth screen again
+    this.profileReady = false;
+    if (this.playerSprite) { this.playerSprite.destroy(); this.playerSprite = null; }
+    if (this.playerLabel) { this.playerLabel.destroy(); this.playerLabel = null; }
+    this.playerManager.clear();
+    this.playerId = null;
+    this.playerName = 'Traveler';
+    this.playerCredits = 0;
 
-    // ── Existing Players ──
-    this.network.on('existingPlayers', (msg) => {
-      for (const p of msg.players) {
-        this.playerManager.addPlayer(p.id, p.x, p.y, p.name, p.color);
-      }
-    });
-
-    // ── Player Joined ──
-    this.network.on('playerJoined', (msg) => {
-      this.playerManager.addPlayer(msg.id, msg.x, msg.y, msg.name, msg.color);
-      const displayName = msg.name || msg.id.substring(0, 6);
-      this.chat.addMessage('', `${displayName} joined`, true);
-    });
-
-    // ── Player Left ──
-    this.network.on('playerLeft', (msg) => {
-      const displayName = msg.name || msg.id.substring(0, 6);
-      this.playerManager.removePlayer(msg.id);
-      this.chat.addMessage('', `${displayName} left`, true);
-    });
-
-    // ── Player Moved ──
-    this.network.on('playerMoved', (msg) => {
-      this.playerManager.updatePlayer(msg.id, msg.x, msg.y);
-    });
-
-    // ── Profile Update ──
-    this.network.on('profileUpdate', (msg) => {
-      this.playerManager.updateProfile(msg.id, msg.name, msg.color);
-    });
-
-    // ── Chat Message ──
-    this.network.on('chatMessage', (msg) => {
-      this.chat.addMessage(msg.id.substring(0, 6), msg.message);
-    });
-
-    // ── Chunk Data ──
-    this.network.on('chunkData', (msg) => {
-      this.chunkRenderer.addChunk(msg.chunk);
-    });
-
-    // ── Block Update ──
-    this.network.on('blockUpdate', (msg) => {
-      this.blockHandler.handle(msg);
-    });
-
-    // ── Zone Changed ──
-    this.network.on('zoneChanged', (msg) => {
-      this.zone = msg.zone;
-      this.playerManager.clear();
-      this.chat.addMessage('', `Entered ${msg.zone}`, true);
-    });
-
-    // ── Error ──
-    this.network.on('error', (msg) => {
-      console.warn(`⚠️ Server error: ${msg.message}`);
-    });
-
-    // ── Interact Result ──
-    this.network.on('interactResult', (msg) => {
-      this.chat.addMessage('', msg.message, true);
-    });
+    // Intentional disconnect — prevent auto-reconnect
+    this.network.intentionalClose = true;
+    if (this.network.ws) {
+      this.network.ws.close();
+    }
+    // Reconnect after a short delay — will trigger authRequired again
+    setTimeout(() => {
+      this.network.reconnectDelay = 1000;
+      this.network.connect();
+    }, 500);
   }
 
   update(time, delta) {
@@ -895,6 +1076,7 @@ class AethariaScene extends Phaser.Scene {
       y: tileY,
       zone: this.zone,
       playerName: this.playerName,
+      credits: this.playerCredits || 0,
       playerCount: Object.keys(this.playerManager.players).length + 1,
       connected: this.network.connected,
     });

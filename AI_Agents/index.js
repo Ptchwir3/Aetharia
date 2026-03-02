@@ -88,6 +88,8 @@ class Agent {
     this.ws.on('open', () => {
       console.log(`✅ [${this.name}] Connected`);
       this.connected = true;
+      // Identify as AI immediately — server expects auth before welcome
+      this.send({ type: 'identify', isAI: true, name: this.name });
     });
 
     this.ws.on('message', (raw) => {
@@ -113,14 +115,15 @@ class Agent {
 
   handleMessage(msg) {
     switch (msg.type) {
+      case 'authRequired':
+        // Server asks for auth — we already sent identify on open, ignore
+        break;
+
       case 'welcome':
         this.id = msg.id;
         this.x = msg.x;
         this.y = msg.y;
         this.zone = msg.zone;
-
-        // Identify ourselves as AI to the server (grants extended build range)
-        this.send({ type: 'identify', isAI: true });
 
         console.log(`🎉 [${this.name}] Spawned at (${this.x}, ${this.y}) in ${this.zone}`);
         if (msg.chunks) {

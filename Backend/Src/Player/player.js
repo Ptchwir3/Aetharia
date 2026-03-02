@@ -4,12 +4,14 @@ const { PLAYER } = require('../Utils/constants');
 function createPlayer(id, options = {}) {
   return {
     id,
+    username: options.username || null,
     x: options.x !== undefined ? options.x : PLAYER.SPAWN_X,
     y: options.y !== undefined ? options.y : PLAYER.SPAWN_Y,
-    zone: null,
-    inventory: [],
+    zone: options.zone || null,
+    inventory: options.inventory || [],
+    credits: options.credits !== undefined ? options.credits : 100,
     // Profile
-    name: options.name || id.substring(0, 6),
+    name: options.username || options.name || id.substring(0, 6),
     color: options.color || '#FF5722',
     // Physics
     velocityY: 0,
@@ -20,6 +22,7 @@ function createPlayer(id, options = {}) {
     messageCount: 0,
     // Flags
     isAI: options.isAI || false,
+    authenticated: options.authenticated || false,
   };
 }
 

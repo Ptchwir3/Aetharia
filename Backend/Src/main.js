@@ -2,11 +2,10 @@
 //
 // AETHARIA — Main Backend Server
 // ================================
-// Core WebSocket server with SERVER-SIDE GRAVITY.
-// A physics loop runs every 50ms, applying gravity to all
-// players, checking terrain collision, and broadcasting
-// authoritative positions. Clients send horizontal input
-// and jump requests; the server owns Y position.
+// Core WebSocket server with:
+//   - Authentication (register/login with persistent accounts)
+//   - Server-side gravity
+//   - Auto-save player state every 60 seconds
 
 const express = require('express');
 const http = require('http');
@@ -14,10 +13,12 @@ const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 
 const handleMessage = require('./Handlers/handleMessage');
+const { handleRegister, handleLogin } = require('./Handlers/handleAuth');
 const { createPlayer } = require('./Player/player');
 const { assignPlayerToZone, removePlayerFromZone, getZonePlayers } = require('./World/zoneManager');
 const { generateChunk } = require('./World/terrainGen');
 const { getModifiedChunk, getTile } = require('./World/worldState');
+const db = require('./Database/db');
 const log = require('./Utils/logger');
 const { WORLD, SERVER, MSG } = require('./Utils/constants');
 
@@ -25,10 +26,10 @@ const { WORLD, SERVER, MSG } = require('./Utils/constants');
 // Physics Constants
 // ─────────────────────────────────────────────
 
-const PHYSICS_TICK_RATE = 50; // ms between physics updates (20 ticks/sec)
-const GRAVITY = 30;           // tiles/sec² (applied per tick as fraction)
-const MAX_FALL_SPEED = 25;    // max tiles/sec downward
-const JUMP_VELOCITY = -14;    // tiles/sec upward on jump
+const PHYSICS_TICK_RATE = 50;
+const GRAVITY = 30;
+const MAX_FALL_SPEED = 25;
+const JUMP_VELOCITY = -14;
 
 const SOLID_TILES = [
   WORLD.TILES.DIRT, WORLD.TILES.STONE, WORLD.TILES.GRASS,
@@ -56,12 +57,8 @@ const playerIdToWs = new Map();
 // ─────────────────────────────────────────────
 // Find spawn surface
 // ─────────────────────────────────────────────
-// Scans vertically at spawnX to find a safe spawn position
-// (in air, above solid ground).
 
 function findSpawnSurface(spawnX) {
-  // Start from high up and scan down to find the first air tile
-  // above a solid tile
   for (let y = -20; y < 50; y++) {
     const tile = getTile(spawnX, y);
     const tileBelow = getTile(spawnX, y + 1);
@@ -69,33 +66,14 @@ function findSpawnSurface(spawnX) {
       return y;
     }
   }
-  return 0; // Fallback
+  return 0;
 }
 
 // ─────────────────────────────────────────────
-// Connection Handler
+// Helper: Send Welcome Packet
 // ─────────────────────────────────────────────
 
-wss.on('connection', (ws) => {
-  const playerId = uuidv4();
-
-  const player = createPlayer(playerId);
-  players[playerId] = player;
-
-  wsToPlayerId.set(ws, playerId);
-  playerIdToWs.set(playerId, ws);
-
-  // Find safe spawn position on the surface
-  const spawnY = findSpawnSurface(Math.round(player.x));
-  player.y = spawnY;
-  player.onGround = true;
-
-  const zoneId = assignPlayerToZone(playerId, player.x, player.y);
-  player.zone = zoneId;
-
-  log(`🧍 Player connected: ${playerId} → ${zoneId} at (${player.x}, ${player.y})`);
-
-  // Generate initial chunks
+function sendWelcome(ws, player, playerId) {
   const spawnChunkX = Math.floor(player.x / WORLD.CHUNK_SIZE);
   const spawnChunkY = Math.floor(player.y / WORLD.CHUNK_SIZE);
 
@@ -115,15 +93,19 @@ wss.on('connection', (ws) => {
     color: player.color,
     x: player.x,
     y: player.y,
-    zone: zoneId,
+    zone: player.zone,
+    credits: player.credits,
+    inventory: player.inventory,
     chunks: initialChunks,
     worldConfig: {
       chunkSize: WORLD.CHUNK_SIZE,
       tileSize: WORLD.TILE_SIZE,
     },
   }));
+}
 
-  broadcastToZone(zoneId, {
+function broadcastJoin(playerId, player) {
+  broadcastToZone(player.zone, {
     type: 'playerJoined',
     id: playerId,
     name: player.name,
@@ -131,7 +113,9 @@ wss.on('connection', (ws) => {
     x: player.x,
     y: player.y,
   }, playerId);
+}
 
+function sendExistingPlayers(ws, playerId, zoneId) {
   const zonePlayers = getZonePlayers(zoneId);
   const existingPlayers = zonePlayers
     .filter((pid) => pid !== playerId && players[pid])
@@ -149,47 +133,197 @@ wss.on('connection', (ws) => {
       players: existingPlayers,
     }));
   }
+}
+
+// ─────────────────────────────────────────────
+// Auto-Save Loop
+// ─────────────────────────────────────────────
+
+function startAutoSave() {
+  setInterval(() => {
+    let saved = 0;
+    for (const playerId of Object.keys(players)) {
+      const player = players[playerId];
+      if (!player || !player.authenticated || !player.username) continue;
+      try {
+        db.savePlayerState(
+          player.username, player.x, player.y,
+          player.zone, player.inventory, player.credits
+        );
+        saved++;
+      } catch (e) {
+        log(`❌ Auto-save failed for ${player.username}: ${e.message}`);
+      }
+    }
+    if (saved > 0) log(`💾 Auto-saved ${saved} player(s)`);
+  }, 60000);
+
+  log(`💾 Auto-save started (60s interval)`);
+}
+
+// ─────────────────────────────────────────────
+// Connection Handler
+// ─────────────────────────────────────────────
+
+wss.on('connection', (ws) => {
+  const playerId = uuidv4();
+  let player = null;
+  let authenticated = false;
+
+  // Send auth prompt — client must register or login before playing
+  ws.send(JSON.stringify({ type: 'authRequired' }));
 
   ws.on('message', (msg) => {
     try {
       const data = JSON.parse(msg);
-      if (data.type === 'identify' && data.isAI === true) {
-        player.isAI = true;
-        log(`🤖 Player ${playerId} identified as AI agent`);
+
+      // ── Pre-auth: handle register/login/identify ──
+      if (!authenticated) {
+
+        // AI agents bypass auth
+        if (data.type === 'identify' && data.isAI === true) {
+          player = createPlayer(playerId, {
+            name: data.name || playerId.substring(0, 6),
+            isAI: true,
+            authenticated: true,
+          });
+          players[playerId] = player;
+          wsToPlayerId.set(ws, playerId);
+          playerIdToWs.set(playerId, ws);
+
+          const spawnY = findSpawnSurface(Math.round(player.x));
+          player.y = spawnY;
+          player.onGround = true;
+
+          const zoneId = assignPlayerToZone(playerId, player.x, player.y);
+          player.zone = zoneId;
+          authenticated = true;
+
+          log(`🤖 AI agent connected: ${data.name || playerId} → ${zoneId}`);
+
+          sendWelcome(ws, player, playerId);
+          broadcastJoin(playerId, player);
+          sendExistingPlayers(ws, playerId, zoneId);
+          return;
+        }
+
+        // Register new account
+        if (data.type === 'register') {
+          const result = handleRegister(data, ws);
+          if (!result) return; // Error already sent to client
+
+          const spawnY = findSpawnSurface(Math.round(result.x));
+          player = createPlayer(playerId, {
+            username: result.username,
+            x: result.x,
+            y: spawnY,
+            color: result.color,
+            inventory: result.inventory,
+            credits: result.credits,
+            authenticated: true,
+          });
+          player.name = result.username;
+          player.onGround = true;
+
+          players[playerId] = player;
+          wsToPlayerId.set(ws, playerId);
+          playerIdToWs.set(playerId, ws);
+
+          const zoneId = assignPlayerToZone(playerId, player.x, player.y);
+          player.zone = zoneId;
+          authenticated = true;
+
+          sendWelcome(ws, player, playerId);
+          broadcastJoin(playerId, player);
+          sendExistingPlayers(ws, playerId, zoneId);
+          return;
+        }
+
+        // Login to existing account
+        if (data.type === 'login') {
+          const result = handleLogin(data, ws);
+          if (!result) return; // Error already sent to client
+
+          // Use saved Y if reasonable, otherwise find surface
+          const spawnY = findSpawnSurface(Math.round(result.x));
+          const useY = (Math.abs(result.y) < 200) ? result.y : spawnY;
+
+          player = createPlayer(playerId, {
+            username: result.username,
+            x: result.x,
+            y: useY,
+            zone: result.zone,
+            color: result.color,
+            inventory: result.inventory,
+            credits: result.credits,
+            authenticated: true,
+          });
+          player.name = result.username;
+          player.onGround = false; // Let physics settle
+
+          players[playerId] = player;
+          wsToPlayerId.set(ws, playerId);
+          playerIdToWs.set(playerId, ws);
+
+          const zoneId = assignPlayerToZone(playerId, player.x, player.y);
+          player.zone = zoneId;
+          authenticated = true;
+
+          sendWelcome(ws, player, playerId);
+          broadcastJoin(playerId, player);
+          sendExistingPlayers(ws, playerId, zoneId);
+          return;
+        }
+
+        // Unknown pre-auth message
+        ws.send(JSON.stringify({ type: 'authError', message: 'Please log in or register first' }));
         return;
       }
+
+      // ── Post-auth: normal game messages ──
       handleMessage(data, playerId, players, ws, wss, {
         broadcastToZone,
         playerIdToWs,
         wsToPlayerId,
       });
     } catch (e) {
-      log(`❌ Bad message from ${playerId}: ${msg}`);
+      log(`❌ Bad message from ${playerId}: ${e.message}`);
     }
   });
 
   ws.on('close', () => {
-    const player = players[playerId];
-    const zoneId = player ? player.zone : null;
+    if (player) {
+      const zoneId = player.zone;
 
-    log(`🚪 Player disconnected: ${playerId} (zone: ${zoneId})`);
+      // Save to database on disconnect
+      if (player.authenticated && player.username) {
+        try {
+          db.savePlayerState(
+            player.username, player.x, player.y,
+            player.zone, player.inventory, player.credits
+          );
+          log(`💾 Saved state for ${player.username}`);
+        } catch (e) {
+          log(`❌ Save failed for ${player.username}: ${e.message}`);
+        }
+      }
 
-    if (zoneId) {
-      removePlayerFromZone(playerId, zoneId);
+      log(`🚪 Player disconnected: ${player.name} (${playerId})`);
+
+      if (zoneId) {
+        removePlayerFromZone(playerId, zoneId);
+        broadcastToZone(zoneId, {
+          type: 'playerLeft',
+          id: playerId,
+          name: player.name,
+          color: player.color,
+        });
+      }
     }
 
     wsToPlayerId.delete(ws);
     playerIdToWs.delete(playerId);
     delete players[playerId];
-
-    if (zoneId) {
-      broadcastToZone(zoneId, {
-        type: 'playerLeft',
-        id: playerId,
-        name: player.name,
-        color: player.color,
-      });
-    }
   });
 
   ws.on('error', (err) => {
@@ -200,16 +334,9 @@ wss.on('connection', (ws) => {
 // ─────────────────────────────────────────────
 // Physics Loop
 // ─────────────────────────────────────────────
-// Runs every PHYSICS_TICK_RATE ms. For each connected player:
-//   1. Apply gravity (increase velocityY)
-//   2. Calculate new Y position
-//   3. Check terrain collision (feet for falling, head for jumping)
-//   4. If position changed, broadcast to zone
-//
-// This is the AUTHORITATIVE source of Y position for all entities.
 
 function startPhysicsLoop() {
-  const dt = PHYSICS_TICK_RATE / 1000; // Convert to seconds
+  const dt = PHYSICS_TICK_RATE / 1000;
 
   setInterval(() => {
     for (const playerId of Object.keys(players)) {
@@ -218,7 +345,6 @@ function startPhysicsLoop() {
 
       const prevY = player.y;
 
-      // Apply gravity
       player.velocityY += GRAVITY * dt;
       if (player.velocityY > MAX_FALL_SPEED) {
         player.velocityY = MAX_FALL_SPEED;
@@ -232,10 +358,8 @@ function startPhysicsLoop() {
       const rightEdge = tileX + 0.9;
 
       if (player.velocityY > 0) {
-        // Falling — check below feet
         const feetCheckY = newY + 1.0;
         if (isSolid(leftEdge, feetCheckY) || isSolid(rightEdge, feetCheckY)) {
-          // Land on top of the solid tile
           const landY = Math.floor(feetCheckY) - 1;
           newY = landY;
           player.velocityY = 0;
@@ -244,27 +368,21 @@ function startPhysicsLoop() {
           player.onGround = false;
         }
       } else if (player.velocityY < 0) {
-        // Jumping — check above head
         const headCheckY = newY;
         if (isSolid(leftEdge, headCheckY) || isSolid(rightEdge, headCheckY)) {
-          // Bonk head on ceiling
           const bonkY = Math.floor(headCheckY) + 1;
           newY = bonkY;
           player.velocityY = 0;
         }
       }
 
-      // Additional ground check: if not moving vertically,
-      // verify we still have ground beneath us
       if (player.onGround && player.velocityY === 0) {
         const belowFeetY = newY + 1.0;
         if (!isSolid(leftEdge, belowFeetY) && !isSolid(rightEdge, belowFeetY)) {
           player.onGround = false;
-          // Will start falling next tick
         }
       }
 
-      // Unstick: if player is inside a solid tile, push up
       if (isSolid(tileX + 0.5, newY + 0.5)) {
         for (let checkY = newY; checkY > newY - 10; checkY--) {
           if (!isSolid(tileX + 0.5, checkY + 0.5)) {
@@ -278,11 +396,9 @@ function startPhysicsLoop() {
 
       player.y = newY;
 
-      // Broadcast if position changed meaningfully
       if (Math.abs(player.y - prevY) > 0.01) {
         const ws = playerIdToWs.get(playerId);
 
-        // Send authoritative position to the player themselves
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'positionCorrection',
@@ -292,7 +408,6 @@ function startPhysicsLoop() {
           }));
         }
 
-        // Broadcast to other players in zone
         broadcastToZone(player.zone, {
           type: MSG.PLAYER_MOVED,
           id: playerId,
@@ -358,7 +473,9 @@ server.listen(PORT, () => {
   log(`   Chunk size: ${WORLD.CHUNK_SIZE} tiles`);
   log(`   Tile size: ${WORLD.TILE_SIZE}px`);
   log(`   Physics: ${PHYSICS_TICK_RATE}ms tick, gravity=${GRAVITY}, jump=${JUMP_VELOCITY}`);
+  log(`   Database: ${process.env.DATABASE_PATH || 'data/aetharia.db'}`);
   log(`   Heartbeat interval: ${SERVER.HEARTBEAT_INTERVAL}ms`);
   startHeartbeat();
   startPhysicsLoop();
+  startAutoSave();
 });
