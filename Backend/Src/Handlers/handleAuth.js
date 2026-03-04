@@ -49,7 +49,10 @@ function handleRegister(data, ws) {
     x: 0,
     y: 0,
     zone: 'zone_central',
-    inventory: [],
+    inventory: [
+      { name: 'stone', tile: 2, quantity: 20 },
+      { name: 'wood', tile: 6, quantity: 10 },
+    ],
     credits: 100,
   };
 }

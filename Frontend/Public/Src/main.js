@@ -24,7 +24,8 @@ const PLAYER_SPEED = 200;
 const GRAVITY = 600;
 const JUMP_VELOCITY = -280;
 const MAX_FALL_SPEED = 500;
-const SOLID_TILES = [1, 2, 3, 5, 6, 7]; // Everything except AIR(0) and WATER(4)
+const SOLID_TILES = [1, 2, 3, 5, 6, 7];
+const WORLD_TILES = { AIR: 0, DIRT: 1, STONE: 2, GRASS: 3, WATER: 4, SAND: 5, WOOD: 6, LEAVES: 7 }; // Everything except AIR(0) and WATER(4)
 
 const TILE_COLORS = {
   0: null,         // AIR
@@ -438,7 +439,258 @@ class HUD {
 }
 
 // ─────────────────────────────────────────────
-// Profile Picker
+// Block Names
+// ─────────────────────────────────────────────
+
+const BLOCK_NAMES = {
+  1: 'Dirt', 2: 'Stone', 3: 'Grass', 4: 'Water', 5: 'Sand', 6: 'Wood', 7: 'Leaves',
+};
+
+const BLOCK_COLORS_HEX = {
+  1: '#8B6914', 2: '#808080', 3: '#228B22', 4: '#4169E1', 5: '#FFD700', 6: '#8B4513', 7: '#006400',
+};
+
+// ─────────────────────────────────────────────
+// Hotbar
+// ─────────────────────────────────────────────
+
+class Hotbar {
+  constructor(scene) {
+    this.scene = scene;
+    this.slots = [];
+    this.elements = []; // track all elements for repositioning
+    this.selectedIndex = 0;
+    this.inventory = [];
+    this.slotCount = 9;
+    this.slotSize = 44;
+    this.padding = 4;
+    this.built = false;
+  }
+
+  build() {
+    // Destroy old elements if rebuilding
+    this.elements.forEach(e => e.destroy());
+    this.elements = [];
+    this.slots = [];
+
+    const w = this.scene.scale.width;
+    const h = this.scene.scale.height;
+    const totalWidth = this.slotCount * (this.slotSize + this.padding) - this.padding;
+    const startX = (w - totalWidth) / 2;
+    const y = h - this.slotSize - 12;
+
+    // Background bar
+    const bg = this.scene.add.rectangle(
+      w / 2, y + this.slotSize / 2,
+      totalWidth + 16, this.slotSize + 12,
+      0x000000, 0.6
+    );
+    bg.setScrollFactor(0);
+    bg.setDepth(199);
+    this.elements.push(bg);
+
+    for (let i = 0; i < this.slotCount; i++) {
+      const x = startX + i * (this.slotSize + this.padding);
+
+      const slotBg = this.scene.add.rectangle(
+        x + this.slotSize / 2, y + this.slotSize / 2,
+        this.slotSize, this.slotSize,
+        0x1a1a2e, 0.8
+      );
+      slotBg.setStrokeStyle(2, i === 0 ? 0x00ffff : 0x444444);
+      slotBg.setScrollFactor(0);
+      slotBg.setDepth(200);
+      this.elements.push(slotBg);
+
+      const swatch = this.scene.add.rectangle(
+        x + this.slotSize / 2, y + this.slotSize / 2 - 2,
+        24, 24, 0x000000, 0
+      );
+      swatch.setScrollFactor(0);
+      swatch.setDepth(201);
+      this.elements.push(swatch);
+
+      const qty = this.scene.add.text(x + this.slotSize - 4, y + this.slotSize - 4, '', {
+        fontSize: '10px', fontFamily: 'monospace', color: '#ffffff',
+      });
+      qty.setOrigin(1, 1);
+      qty.setScrollFactor(0);
+      qty.setDepth(202);
+      this.elements.push(qty);
+
+      const keyNum = this.scene.add.text(x + 4, y + 2, String(i + 1), {
+        fontSize: '8px', fontFamily: 'monospace', color: '#666666',
+      });
+      keyNum.setScrollFactor(0);
+      keyNum.setDepth(202);
+      this.elements.push(keyNum);
+
+      this.slots.push({ bg: slotBg, swatch, qty, keyNum });
+    }
+
+    this.built = true;
+    this.refresh();
+
+    // Rebuild on window resize
+    this.scene.scale.on('resize', () => {
+      this.built = false;
+      this.build();
+    });
+  }
+
+  setInventory(inventory) {
+    this.inventory = inventory || [];
+    console.log('📦 Hotbar setInventory called, items:', this.inventory.length);
+    try {
+      if (!this.built) {
+        console.log('📦 Building hotbar...');
+        this.build();
+      }
+      this.refresh();
+    } catch(e) {
+      console.error('📦 Hotbar error:', e);
+    }
+  }
+
+  refresh() {
+    for (let i = 0; i < this.slotCount; i++) {
+      const slot = this.slots[i];
+      const item = this.inventory[i];
+
+      // Update selection highlight
+      slot.bg.setStrokeStyle(2, i === this.selectedIndex ? 0x00ffff : 0x444444);
+
+      if (item && item.quantity > 0) {
+        const colorHex = BLOCK_COLORS_HEX[item.tile] || '#ffffff';
+        const colorInt = parseInt(colorHex.replace('#', '0x'), 16);
+        slot.swatch.setFillStyle(colorInt, 1);
+        slot.qty.setText(item.quantity.toString());
+      } else {
+        slot.swatch.setFillStyle(0x000000, 0);
+        slot.qty.setText('');
+      }
+    }
+  }
+
+  selectSlot(index) {
+    if (index < 0 || index >= this.slotCount) return;
+    this.selectedIndex = index;
+    this.refresh();
+  }
+
+  getSelectedItem() {
+    return this.inventory[this.selectedIndex] || null;
+  }
+
+  scrollSlot(direction) {
+    this.selectedIndex = (this.selectedIndex + direction + this.slotCount) % this.slotCount;
+    this.refresh();
+  }
+}
+
+// ─────────────────────────────────────────────
+// Block Interaction
+// ─────────────────────────────────────────────
+
+class BlockInteraction {
+  constructor(scene, chunkRenderer, network, hotbar) {
+    this.scene = scene;
+    this.chunkRenderer = chunkRenderer;
+    this.network = network;
+    this.hotbar = hotbar;
+    this.highlight = null;
+    this.maxRange = 5;
+    this.enabled = false;
+
+    // Create highlight overlay
+    this.highlight = scene.add.rectangle(0, 0, TILE_SIZE, TILE_SIZE, 0xffffff, 0.2);
+    this.highlight.setDepth(15);
+    this.highlight.setVisible(false);
+
+    // Mouse/pointer events
+    scene.input.on('pointermove', (pointer) => this.onPointerMove(pointer));
+    scene.input.on('pointerdown', (pointer) => this.onPointerDown(pointer));
+  }
+
+  enable() { this.enabled = true; }
+  disable() { this.enabled = false; }
+
+  getWorldTile(pointer) {
+    const worldX = pointer.worldX;
+    const worldY = pointer.worldY;
+    const tileX = Math.floor(worldX / TILE_SIZE);
+    const tileY = Math.floor(worldY / TILE_SIZE);
+    return { tileX, tileY, worldX, worldY };
+  }
+
+  isInRange(tileX, tileY) {
+    if (!this.scene.playerSprite) return false;
+    const playerTileX = Math.floor(this.scene.playerSprite.x / TILE_SIZE);
+    const playerTileY = Math.floor(this.scene.playerSprite.y / TILE_SIZE);
+    const dx = Math.abs(tileX - playerTileX);
+    const dy = Math.abs(tileY - playerTileY);
+    return dx <= this.maxRange && dy <= this.maxRange;
+  }
+
+  onPointerMove(pointer) {
+    if (!this.enabled) { this.highlight.setVisible(false); return; }
+    const { tileX, tileY } = this.getWorldTile(pointer);
+
+    if (this.isInRange(tileX, tileY)) {
+      this.highlight.setPosition(tileX * TILE_SIZE + TILE_SIZE / 2, tileY * TILE_SIZE + TILE_SIZE / 2);
+      this.highlight.setVisible(true);
+
+      const tile = this.chunkRenderer.getTileAt(tileX, tileY);
+      if (SOLID_TILES.includes(tile)) {
+        this.highlight.setFillStyle(0xff0000, 0.2); // Red = can mine
+      } else {
+        this.highlight.setFillStyle(0x00ff00, 0.2); // Green = can place
+      }
+    } else {
+      this.highlight.setVisible(false);
+    }
+  }
+
+  onPointerDown(pointer) {
+    if (!this.enabled) return;
+    if (this.scene.chat && this.scene.chat.isActive()) return;
+
+    const { tileX, tileY } = this.getWorldTile(pointer);
+    if (!this.isInRange(tileX, tileY)) return;
+
+    const currentTile = this.chunkRenderer.getTileAt(tileX, tileY);
+
+    if (pointer.rightButtonDown() || pointer.event.shiftKey) {
+      // Mine / remove block
+      if (SOLID_TILES.includes(currentTile) && currentTile !== WORLD_TILES.GRASS) {
+        this.network.send({ type: 'removeBlock', x: tileX, y: tileY });
+        this.flashTile(tileX, tileY, 0xffffff);
+      }
+    } else {
+      // Place block from hotbar
+      const item = this.hotbar.getSelectedItem();
+      if (item && item.quantity > 0 && !SOLID_TILES.includes(currentTile)) {
+        this.network.send({ type: 'placeBlock', x: tileX, y: tileY, tile: item.tile });
+        this.flashTile(tileX, tileY, 0x00ffff);
+      }
+    }
+  }
+
+  flashTile(tileX, tileY, color) {
+    const flash = this.scene.add.rectangle(
+      tileX * TILE_SIZE + TILE_SIZE / 2, tileY * TILE_SIZE + TILE_SIZE / 2,
+      TILE_SIZE, TILE_SIZE, color, 0.5
+    );
+    flash.setDepth(16);
+    this.scene.tweens.add({
+      targets: flash, alpha: 0, duration: 200,
+      onComplete: () => flash.destroy(),
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+// Auth Screen
 // ─────────────────────────────────────────────
 
 class AuthScreen {
@@ -767,6 +1019,23 @@ class AethariaScene extends Phaser.Scene {
       }
     });
 
+    // Hotbar number keys 1-9
+    for (let i = 1; i <= 9; i++) {
+      this.input.keyboard.on(`keydown-${i === 1 ? 'ONE' : i === 2 ? 'TWO' : i === 3 ? 'THREE' : i === 4 ? 'FOUR' : i === 5 ? 'FIVE' : i === 6 ? 'SIX' : i === 7 ? 'SEVEN' : i === 8 ? 'EIGHT' : 'NINE'}`, () => {
+        if (!this.chat.isActive()) this.hotbar.selectSlot(i - 1);
+      });
+    }
+
+    // Scroll wheel for hotbar
+    this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
+      if (!this.chat.isActive()) {
+        this.hotbar.scrollSlot(deltaY > 0 ? 1 : -1);
+      }
+    });
+
+    // Right-click context menu prevention
+    this.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
     this.input.keyboard.on('keydown-T', () => {
       if (!this.chat.isActive() && this.profileReady) {
         this.chat.showInput();
@@ -776,6 +1045,12 @@ class AethariaScene extends Phaser.Scene {
     this.chat.onSend = (message) => {
       this.network.send({ type: 'chat', message }, true);
     };
+
+    // Hotbar
+    this.hotbar = new Hotbar(this);
+
+    // Block interaction (mouse mining/placing)
+    this.blockInteraction = new BlockInteraction(this, this.chunkRenderer, this.network, this.hotbar);
 
     this.registerNetworkHandlers();
     this.network.connect();
@@ -860,10 +1135,23 @@ class AethariaScene extends Phaser.Scene {
     this.network.on('interactResult', (msg) => {
       this.chat.addMessage('', msg.message, true);
     });
+
+    // ── Inventory Update ──
+    this.network.on('inventoryUpdate', (msg) => {
+      if (this.hotbar && msg.inventory) {
+        this.hotbar.setInventory(msg.inventory);
+        // Update credits display
+        const player = msg;
+        if (msg.credits !== undefined) this.playerCredits = msg.credits;
+      }
+    });
   }
 
   handleWelcome(msg) {
       console.log(`🎉 Welcome! ID: ${msg.id}, Zone: ${msg.zone}`);
+      console.log('📦 Welcome msg keys:', Object.keys(msg));
+      console.log('📦 Inventory:', JSON.stringify(msg.inventory));
+      console.log('📦 Hotbar exists:', !!this.hotbar);
       this.playerId = msg.id;
       this.zone = msg.zone;
       this.worldConfig = msg.worldConfig;
@@ -933,11 +1221,21 @@ class AethariaScene extends Phaser.Scene {
       this.velocityY = 0;
       this.onGround = false;
       this.profileReady = true;
+
+      // Populate hotbar with inventory from server
+      if (this.hotbar && msg.inventory) {
+        this.hotbar.setInventory(msg.inventory);
+      }
+
+      // Enable block interaction
+      if (this.blockInteraction) this.blockInteraction.enable();
+
       this.chat.addMessage('', `Welcome to Aetharia, ${this.playerName}!`, true);
   }
   logout() {
     // Disconnect and show auth screen again
     this.profileReady = false;
+    if (this.blockInteraction) this.blockInteraction.disable();
     if (this.playerSprite) { this.playerSprite.destroy(); this.playerSprite = null; }
     if (this.playerLabel) { this.playerLabel.destroy(); this.playerLabel = null; }
     this.playerManager.clear();

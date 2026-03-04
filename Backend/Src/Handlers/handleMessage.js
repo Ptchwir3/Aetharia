@@ -17,6 +17,48 @@ const SOLID_TILES = [
   WORLD.TILES.SAND, WORLD.TILES.WOOD, WORLD.TILES.LEAVES,
 ];
 
+const BLOCK_NAMES = {
+  [WORLD.TILES.DIRT]: 'dirt',
+  [WORLD.TILES.STONE]: 'stone',
+  [WORLD.TILES.GRASS]: 'grass',
+  [WORLD.TILES.SAND]: 'sand',
+  [WORLD.TILES.WOOD]: 'wood',
+  [WORLD.TILES.LEAVES]: 'leaves',
+};
+
+// Inventory helpers
+function addToInventory(player, tileType) {
+  const name = BLOCK_NAMES[tileType];
+  if (!name) return;
+  if (!Array.isArray(player.inventory)) player.inventory = [];
+  const existing = player.inventory.find(i => i.tile === tileType);
+  if (existing) {
+    existing.quantity++;
+  } else {
+    player.inventory.push({ name, tile: tileType, quantity: 1 });
+  }
+}
+
+function removeFromInventory(player, tileType) {
+  if (!Array.isArray(player.inventory)) return false;
+  const existing = player.inventory.find(i => i.tile === tileType);
+  if (!existing || existing.quantity <= 0) return false;
+  existing.quantity--;
+  if (existing.quantity <= 0) {
+    player.inventory = player.inventory.filter(i => i.tile !== tileType);
+  }
+  return true;
+}
+
+function sendInventoryUpdate(ws, player) {
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify({
+      type: MSG.INVENTORY_UPDATE,
+      inventory: player.inventory || [],
+    }));
+  }
+}
+
 module.exports = function handleMessage(data, playerId, players, ws, wss, context) {
   const player = players[playerId];
   if (!player) {
@@ -258,14 +300,26 @@ function handlePlaceBlock(data, player, playerId, ws, context) {
     return;
   }
 
+  // AI agents don't use inventory
+  if (!player.isAI) {
+    if (!removeFromInventory(player, tile)) {
+      sendError(ws, 'You don\'t have that block in your inventory');
+      return;
+    }
+  }
+
   const success = placeBlock(x, y, tile);
   if (!success) {
+    // Refund the block if placement failed
+    if (!player.isAI) addToInventory(player, tile);
     sendError(ws, 'Failed to place block');
     return;
   }
 
-  const tileName = Object.keys(WORLD.TILES).find(k => WORLD.TILES[k] === tile) || 'UNKNOWN';
+  const tileName = BLOCK_NAMES[tile] || 'UNKNOWN';
   log(`🧱 ${playerId} placed ${tileName} at (${x}, ${y})`);
+
+  if (!player.isAI) sendInventoryUpdate(ws, player);
 
   context.broadcastToZone(player.zone, {
     type: MSG.BLOCK_UPDATE,
@@ -309,8 +363,14 @@ function handleRemoveBlock(data, player, playerId, ws, context) {
     return;
   }
 
-  const tileName = Object.keys(WORLD.TILES).find(k => WORLD.TILES[k] === currentTile) || 'UNKNOWN';
+  const tileName = BLOCK_NAMES[currentTile] || 'UNKNOWN';
   log(`⛏️ ${playerId} removed ${tileName} at (${x}, ${y})`);
+
+  // Award block to player inventory (not AI agents)
+  if (!player.isAI && BLOCK_NAMES[currentTile]) {
+    addToInventory(player, currentTile);
+    sendInventoryUpdate(ws, player);
+  }
 
   context.broadcastToZone(player.zone, {
     type: MSG.BLOCK_UPDATE,
