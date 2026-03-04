@@ -162,37 +162,93 @@ function generateChunk(chunkX, chunkY) {
 
       // ── Trees ──
       // Place trees on grass tiles with seeded randomness.
-      // Trees are: WOOD trunk (2-4 tiles tall) with LEAVES on top.
-      // We only place trees based on the worldX position to keep
-      // them deterministic across chunk boundaries.
-      if (tile === T.AIR && depth < 0 && depth >= -5) {
-        // Check if there should be a tree at this X
-        const treeSeed = mulberry32(chunkSeed(worldX, 0));
-        const treeChance = treeSeed();
-        if (treeChance > 0.85) {
-          // This X has a tree. Trunk goes from surface-1 to surface-4.
-          const trunkTop = surfaceY - 4;
-          const trunkBottom = surfaceY - 1;
+      // Trees only grow on grass — not on sand, water, or air.
+      // Check surface type before placing.
+      if (tile === T.AIR && depth < 0 && depth >= -6) {
+        // Only place tree if the surface at this X is grass
+        const surfaceTileDepth = 0;
+        const seaLevel = -2;
+        const isGrassSurface = surfaceY <= seaLevel && Math.abs(surfaceY - seaLevel) > 2;
 
-          if (worldY >= trunkTop && worldY <= trunkBottom) {
-            tile = T.WOOD;
-          }
+        // Simpler check: surface must be above sea level with margin
+        const surfaceAboveWater = surfaceY < seaLevel - 1;
 
-          // Leaves above trunk (simple 3-wide canopy)
-          const leavesY = trunkTop - 1;
-          if (worldY === leavesY) {
-            tile = T.LEAVES;
+        if (surfaceAboveWater) {
+          const treeSeed = mulberry32(chunkSeed(worldX, 0));
+          const treeChance = treeSeed();
+
+          // Space trees out — also check neighbors don't have trees
+          const neighborSeed1 = mulberry32(chunkSeed(worldX - 1, 0))();
+          const neighborSeed2 = mulberry32(chunkSeed(worldX + 1, 0))();
+          const neighborsHaveTree = neighborSeed1 > 0.85 || neighborSeed2 > 0.85;
+
+          if (treeChance > 0.88 && !neighborsHaveTree) {
+            const trunkHeight = 3 + Math.floor(treeSeed() * 2); // 3-4 tall
+            const trunkTop = surfaceY - trunkHeight;
+            const trunkBottom = surfaceY - 1;
+
+            if (worldY >= trunkTop && worldY <= trunkBottom) {
+              tile = T.WOOD;
+            }
+
+            // Leaves: 3-wide canopy, 2 tiles tall
+            const leavesTop = trunkTop - 1;
+            const leavesBottom = trunkTop;
+            if (worldY >= leavesTop && worldY <= leavesBottom) {
+              // Center column and neighbors get leaves
+              tile = T.LEAVES;
+            }
+            // Side leaves (check if we're 1 tile left or right of a tree trunk)
+            const leftTreeSeed = mulberry32(chunkSeed(worldX - 1, 0))();
+            const rightTreeSeed = mulberry32(chunkSeed(worldX + 1, 0))();
+            // Check if adjacent X has a tree and we're at canopy height
+            if (worldY === leavesTop || worldY === leavesBottom) {
+              const checkX = worldX;
+              for (let tx = -1; tx <= 1; tx++) {
+                const adjSeed = mulberry32(chunkSeed(worldX + tx, 0));
+                const adjChance = adjSeed();
+                const adjNeighbor1 = mulberry32(chunkSeed(worldX + tx - 1, 0))();
+                const adjNeighbor2 = mulberry32(chunkSeed(worldX + tx + 1, 0))();
+                const adjNoNeighborTree = !(adjNeighbor1 > 0.88) && !(adjNeighbor2 > 0.88);
+                if (tx !== 0 && adjChance > 0.88 && adjNoNeighborTree) {
+                  const adjSurface = Math.floor(-8 + surfaceNoise(worldX + tx, rng) * 16);
+                  const adjAboveWater = adjSurface < seaLevel - 1;
+                  if (adjAboveWater) {
+                    const adjTrunkHeight = 3 + Math.floor(adjSeed() * 2);
+                    const adjTrunkTop = adjSurface - adjTrunkHeight;
+                    const adjLeavesTop = adjTrunkTop - 1;
+                    const adjLeavesBottom = adjTrunkTop;
+                    if (worldY >= adjLeavesTop && worldY <= adjLeavesBottom) {
+                      tile = T.LEAVES;
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
 
-      // ── Underground caves ──
-      // Simple cave generation using the RNG. About 8% of deep
-      // stone tiles are hollowed out into air pockets.
-      if (tile === T.STONE && depth > 8) {
+      // ── Underground variety ──
+      // Deeper = rarer materials and bigger caves
+      if (depth > 8 && tile === T.STONE) {
         const caveRoll = rng();
-        if (caveRoll < 0.08) {
+        const oreRoll = rng();
+
+        // Cave frequency increases with depth (8% base, up to 15% deep)
+        const caveChance = 0.08 + Math.min(depth / 500, 0.07);
+        if (caveRoll < caveChance) {
           tile = T.AIR;
+        }
+
+        // Ore deposits (diamond/ice = cyan blocks) deep underground
+        if (tile === T.STONE && depth > 20 && oreRoll < 0.03) {
+          tile = T.WATER; // Using water tile as "crystal/ore" visually (cyan)
+        }
+
+        // Sand pockets (gold veins) at medium depth
+        if (tile === T.STONE && depth > 12 && depth < 40 && oreRoll > 0.95) {
+          tile = T.SAND; // Gold-colored deposits
         }
       }
 

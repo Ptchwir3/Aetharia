@@ -662,7 +662,7 @@ class BlockInteraction {
 
     if (pointer.rightButtonDown() || pointer.event.shiftKey) {
       // Mine / remove block
-      if (SOLID_TILES.includes(currentTile) && currentTile !== WORLD_TILES.GRASS) {
+      if (SOLID_TILES.includes(currentTile)) {
         this.network.send({ type: 'removeBlock', x: tileX, y: tileY });
         this.flashTile(tileX, tileY, 0xffffff);
       }
@@ -1115,10 +1115,18 @@ class AethariaScene extends Phaser.Scene {
     // ── Position Correction (server-side gravity) ──
     this.network.on('positionCorrection', (msg) => {
       if (!this.playerSprite) return;
+      const serverPixelX = msg.x * TILE_SIZE + TILE_SIZE / 2;
       const serverPixelY = msg.y * TILE_SIZE + TILE_SIZE / 2;
+      this.playerSprite.x = serverPixelX;
       this.playerSprite.y = serverPixelY;
       this.onGround = msg.onGround;
       if (msg.onGround) this.velocityY = 0;
+
+      // Immediately request chunks around corrected position
+      const missing = this.chunkRenderer.getMissingChunks(serverPixelX, serverPixelY);
+      for (const chunk of missing) {
+        this.network.send({ type: 'requestChunk', chunkX: chunk.chunkX, chunkY: chunk.chunkY }, true);
+      }
     });
 
     // ── Zone Changed ──

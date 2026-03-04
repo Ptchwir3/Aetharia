@@ -261,7 +261,7 @@ function handleRequestChunk(data, player, playerId, ws) {
     Math.abs(chunkY - playerChunkY)
   );
 
-  if (chunkDistance > 5) {
+  if (chunkDistance > 8) {
     sendError(ws, 'Requested chunk is too far from your position');
     return;
   }

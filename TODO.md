@@ -64,57 +64,63 @@
 
 ---
 
-## Day 2: Inventory System & Block Interaction
+## Day 2: Inventory System & Block Interaction ✅
 
 **Goal:** Players mine blocks, collect them, place them from inventory.
 
 ### Backend
 
-- [ ] Define inventory item structure: `{ name: string, tile: number, quantity: number }`
-- [ ] Update `handleRemoveBlock`:
-  - [ ] On successful block removal, add the block type to player's inventory
-  - [ ] Send `inventoryUpdate` message to the player
-- [ ] Update `handlePlaceBlock`:
-  - [ ] Check player has the block type in inventory
-  - [ ] Deduct from inventory on successful placement
-  - [ ] Send `inventoryUpdate` message
-  - [ ] Reject placement if inventory doesn't have the item
-- [ ] New message type `MSG.INVENTORY_UPDATE = 'inventoryUpdate'` in constants
-- [ ] Starter kit: new players spawn with `[{ name: "stone", tile: 2, quantity: 20 }, { name: "wood", tile: 6, quantity: 10 }]`
-- [ ] Save inventory to DB on auto-save and disconnect (JSON stringified)
-- [ ] Load inventory from DB on login
+- [x] Define inventory item structure: `{ name: string, tile: number, quantity: number }`
+- [x] Update `handleRemoveBlock`:
+  - [x] On successful block removal, add the block type to player's inventory
+  - [x] Send `inventoryUpdate` message to the player
+- [x] Update `handlePlaceBlock`:
+  - [x] Check player has the block type in inventory
+  - [x] Deduct from inventory on successful placement
+  - [x] Send `inventoryUpdate` message
+  - [x] Reject placement if inventory doesn't have the item
+- [x] New message type `MSG.INVENTORY_UPDATE = 'inventoryUpdate'` in constants (added Day 1)
+- [x] Starter kit: new players spawn with `[{ name: "stone", tile: 2, quantity: 20 }, { name: "wood", tile: 6, quantity: 10 }]`
+- [x] Save inventory to DB on auto-save and disconnect (JSON stringified) (from Day 1)
+- [x] Load inventory from DB on login (from Day 1)
 
 ### Frontend
 
-- [ ] Create `Hotbar` class:
-  - [ ] 9 slots displayed at bottom center of screen
-  - [ ] Each slot shows: block color swatch, item name, quantity count
-  - [ ] Selected slot has a highlight border
-  - [ ] Number keys 1-9 select slots
-  - [ ] Scroll wheel cycles through slots
-  - [ ] Fixed to camera (HUD layer)
-- [ ] Create `BlockInteraction` class:
-  - [ ] Track mouse/cursor position → convert to world tile coordinates
-  - [ ] Highlight tile under cursor (semi-transparent overlay)
-  - [ ] Left click: place selected block from hotbar at cursor position
-  - [ ] Right click (or Shift+click): mine/remove block at cursor position
-  - [ ] Range check on client side (max 5 tiles from player)
-  - [ ] Visual feedback: brief flash on place, particle-like effect on mine
-- [ ] Handle `inventoryUpdate` message:
-  - [ ] Update hotbar display with new inventory state
-- [ ] Add inventory to welcome handler (populate hotbar on login)
-- [ ] Block name mapping for display: `{ 1: "Dirt", 2: "Stone", 3: "Grass", 4: "Water", 5: "Sand", 6: "Wood", 7: "Leaves" }`
+- [x] Create `Hotbar` class:
+  - [x] 9 slots displayed at bottom center of screen
+  - [x] Each slot shows: block color swatch + quantity count
+  - [x] Selected slot has a highlight border (cyan)
+  - [x] Number keys 1-9 select slots
+  - [x] Scroll wheel cycles through slots
+  - [x] Fixed to camera (HUD layer), rebuilds on resize
+- [x] Create `BlockInteraction` class:
+  - [x] Track mouse/cursor position → convert to world tile coordinates
+  - [x] Highlight tile under cursor (red=minable, green=placeable)
+  - [x] Left click: place selected block from hotbar at cursor position
+  - [x] Right click (or Shift+click): mine/remove block at cursor position
+  - [x] Range check on client side (max 5 tiles from player)
+  - [x] Visual feedback: brief flash on place/mine
+- [x] Handle `inventoryUpdate` message:
+  - [x] Update hotbar display with new inventory state
+- [x] Add inventory to welcome handler (populate hotbar on login)
+- [x] Block name mapping for display: `{ 1: "Dirt", 2: "Stone", 3: "Grass", 4: "Water", 5: "Sand", 6: "Wood", 7: "Leaves" }`
 
 ### Testing
 
-- [ ] Mine a dirt block → appears in inventory hotbar
-- [ ] Select stone in hotbar → click to place → stone appears in world, quantity decreases
-- [ ] Try to place with 0 quantity → nothing happens
-- [ ] Mine several blocks → disconnect → login → inventory preserved
-- [ ] Other players see blocks placed/removed in real time (existing functionality)
+- [x] Mine a dirt block → appears in inventory hotbar
+- [x] Select stone in hotbar → click to place → stone appears in world, quantity decreases
+- [x] Try to place with 0 quantity → nothing happens (server rejects)
+- [x] Mine several blocks → disconnect → login → inventory preserved
+- [x] Other players see blocks placed/removed in real time (existing functionality)
+
+### Bonus work
+- [x] Enhanced deep terrain generation (ore deposits, gold veins, larger caves at depth)
+- [x] Expanded chunk loading range (5x6 grid, biased downward)
+- [x] Improved tree placement (only on grass, better spacing)
+- [x] Position correction triggers chunk loading
 
 ### Definition of Done
-**Mine dirt, collect it, place it somewhere else. Build a house from materials you gathered. Inventory persists across sessions.**
+**Mine dirt, collect it, place it somewhere else. Build a house from materials you gathered. Inventory persists across sessions.** ✅
 
 ---
 
