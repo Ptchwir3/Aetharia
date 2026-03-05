@@ -1,35 +1,78 @@
-# docker-compose.yml
+# docker-compose.yml — AETHARIA Multi-World Deployment
 #
-# AETHARIA — Full Stack Deployment
-# ==================================
-# Brings up the entire Aetharia metaverse with a single command:
-#
-#   docker compose up --build
-#
-# Services:
-#   backend  — WebSocket game server (port 8080)
-#   frontend — Phaser browser client (port 3500)
-#   agents   — AI agents that inhabit the world
-#
-# After startup, open your browser to:
-#   http://localhost:3500
+# Three worlds: Origin (8080), Caverns (8081), Skylands (8082)
+# Shared SQLite database via volume
+# Frontend connects to Origin by default, portals handle the rest
 
 services:
-  backend:
+  world-origin:
     build:
       context: .
       dockerfile: Backend/Dockerfile
-    container_name: aetharia-backend
+    container_name: world-origin
     ports:
       - "8080:8080"
     environment:
       - PORT=8080
-      - AETHARIA_WORLD_SEED=12345
+      - WORLD_CONFIG=/app/config/origin.json
+      - PORTAL_SECRET=aetharia-portal-s3cret
+      - DATABASE_PATH=/app/data/aetharia.db
       - AETHARIA_HEARTBEAT=30000
       - AETHARIA_DEBUG=false
-      - DATABASE_PATH=/app/data/aetharia.db
+      - CLIENT_PORTAL_URLS={"caverns":"ws://HOSTIP:8081","skylands":"ws://HOSTIP:8082"}
     volumes:
       - aetharia-data:/app/data
+      - ./worlds:/app/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const ws = new (require('ws'))('ws://localhost:8080'); ws.on('open', () => { ws.close(); process.exit(0); }); ws.on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 3000);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  world-caverns:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: world-caverns
+    ports:
+      - "8081:8080"
+    environment:
+      - PORT=8080
+      - WORLD_CONFIG=/app/config/caverns.json
+      - PORTAL_SECRET=aetharia-portal-s3cret
+      - DATABASE_PATH=/app/data/aetharia.db
+      - AETHARIA_HEARTBEAT=30000
+      - CLIENT_PORTAL_URLS={"origin":"ws://HOSTIP:8080","skylands":"ws://HOSTIP:8082"}
+    volumes:
+      - aetharia-data:/app/data
+      - ./worlds:/app/config:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const ws = new (require('ws'))('ws://localhost:8080'); ws.on('open', () => { ws.close(); process.exit(0); }); ws.on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 3000);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  world-skylands:
+    build:
+      context: .
+      dockerfile: Backend/Dockerfile
+    container_name: world-skylands
+    ports:
+      - "8082:8080"
+    environment:
+      - PORT=8080
+      - WORLD_CONFIG=/app/config/skylands.json
+      - PORTAL_SECRET=aetharia-portal-s3cret
+      - DATABASE_PATH=/app/data/aetharia.db
+      - AETHARIA_HEARTBEAT=30000
+      - CLIENT_PORTAL_URLS={"origin":"ws://HOSTIP:8080","caverns":"ws://HOSTIP:8081"}
+    volumes:
+      - aetharia-data:/app/data
+      - ./worlds:/app/config:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "const ws = new (require('ws'))('ws://localhost:8080'); ws.on('open', () => { ws.close(); process.exit(0); }); ws.on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 3000);"]
@@ -46,7 +89,7 @@ services:
     ports:
       - "3500:3500"
     depends_on:
-      backend:
+      world-origin:
         condition: service_healthy
     restart: unless-stopped
 
@@ -56,10 +99,10 @@ services:
       dockerfile: AI_Agents/Dockerfile
     container_name: aetharia-agents
     environment:
-      - BACKEND_URL=ws://backend:8080
+      - BACKEND_URL=ws://world-origin:8080
       - AGENT_TICK_RATE=500
     depends_on:
-      backend:
+      world-origin:
         condition: service_healthy
     restart: unless-stopped
 

@@ -44,6 +44,7 @@ const WORLD = {
     SAND: 5,        // Beaches, deserts
     WOOD: 6,        // Trees
     LEAVES: 7,      // Tree canopy
+    PORTAL: 8,      // Inter-world portal
   },
 };
 
@@ -143,6 +144,10 @@ const MSG = {
   REMOVE_BLOCK: 'removeBlock',   // Remove (mine) a block from the world
   SET_PROFILE: 'setProfile',     // Set player name and color
   INVENTORY_UPDATE: 'inventoryUpdate', // Server sends updated inventory
+
+  // Portal
+  PORTAL_TRANSFER: 'portalTransfer',   // Server tells client to transfer
+  PORTAL_ARRIVE: 'portalArrive',       // Client arrives via portal with JWT
 
   // Auth
   AUTH_REQUIRED: 'authRequired', // Server asks client to log in

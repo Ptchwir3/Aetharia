@@ -17,10 +17,21 @@ const { handleRegister, handleLogin } = require('./Handlers/handleAuth');
 const { createPlayer } = require('./Player/player');
 const { assignPlayerToZone, removePlayerFromZone, getZonePlayers } = require('./World/zoneManager');
 const { generateChunk } = require('./World/terrainGen');
-const { getModifiedChunk, getTile } = require('./World/worldState');
+const { getModifiedChunk, getTile, placeBlock } = require('./World/worldState');
 const db = require('./Database/db');
 const log = require('./Utils/logger');
 const { WORLD, SERVER, MSG } = require('./Utils/constants');
+const { loadWorldConfig } = require('../Shared/worldConfig');
+const jwt = require('jsonwebtoken');
+
+// ─────────────────────────────────────────────
+// World Configuration
+// ─────────────────────────────────────────────
+const worldConfig = loadWorldConfig();
+const PORTAL_SECRET = process.env.PORTAL_SECRET || 'aetharia-portal-secret';
+
+// Override world seed from config
+if (worldConfig.seed) WORLD.SEED = worldConfig.seed;
 
 // ─────────────────────────────────────────────
 // Physics Constants
@@ -100,6 +111,8 @@ function sendWelcome(ws, player, playerId) {
     worldConfig: {
       chunkSize: WORLD.CHUNK_SIZE,
       tileSize: WORLD.TILE_SIZE,
+      worldName: worldConfig.name || 'Origin',
+      worldId: worldConfig.id || 'origin',
     },
   }));
 }
@@ -275,8 +288,54 @@ wss.on('connection', (ws) => {
           return;
         }
 
+        // Portal arrival — player coming from another world
+        if (data.type === 'portalArrive') {
+          try {
+            const decoded = jwt.verify(data.token, PORTAL_SECRET);
+            // Load latest state from DB (might have been saved by source world)
+            const dbPlayer = db.getPlayer(decoded.username);
+            if (!dbPlayer) {
+              ws.send(JSON.stringify({ type: 'authError', message: 'Account not found' }));
+              return;
+            }
+
+            const spawnY = findSpawnSurface(Math.round(worldConfig.spawnX || 0));
+            player = createPlayer(playerId, {
+              username: decoded.username,
+              x: worldConfig.spawnX || 0,
+              y: spawnY,
+              color: decoded.color || dbPlayer.color,
+              inventory: decoded.inventory || JSON.parse(dbPlayer.inventory || '[]'),
+              credits: decoded.credits || dbPlayer.credits,
+              authenticated: true,
+            });
+            player.name = decoded.username;
+            player.onGround = true;
+            players[playerId] = player;
+            wsToPlayerId.set(ws, playerId);
+            playerIdToWs.set(playerId, ws);
+            const zoneId = assignPlayerToZone(playerId, player.x, player.y);
+            player.zone = zoneId;
+            authenticated = true;
+            log(`🌀 Portal arrival: ${decoded.username} from ${decoded.fromWorld} → ${worldConfig.name}`);
+            sendWelcome(ws, player, playerId);
+            broadcastJoin(playerId, player);
+            sendExistingPlayers(ws, playerId, zoneId);
+          } catch (e) {
+            log(`❌ Portal token invalid: ${e.message}`);
+            ws.send(JSON.stringify({ type: 'authError', message: 'Portal transfer failed — please log in' }));
+          }
+          return;
+        }
+
         // Unknown pre-auth message
         ws.send(JSON.stringify({ type: 'authError', message: 'Please log in or register first' }));
+        return;
+      }
+
+      // ── Portal interact ──
+      if (data.type === 'portalInteract') {
+        checkPortalCollision(playerId, player);
         return;
       }
 
@@ -345,7 +404,7 @@ function startPhysicsLoop() {
 
       const prevY = player.y;
 
-      player.velocityY += GRAVITY * dt;
+      player.velocityY += (worldConfig.gravity || GRAVITY) * dt;
       if (player.velocityY > MAX_FALL_SPEED) {
         player.velocityY = MAX_FALL_SPEED;
       }
@@ -470,12 +529,126 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, () => {
   log(`🌍 AETHARIA server running on port ${PORT}`);
+  log(`   World: ${worldConfig.name} (${worldConfig.id})`);
+  log(`   Seed: ${WORLD.SEED}`);
+  log(`   Gravity: ${worldConfig.gravity || GRAVITY}`);
   log(`   Chunk size: ${WORLD.CHUNK_SIZE} tiles`);
-  log(`   Tile size: ${WORLD.TILE_SIZE}px`);
-  log(`   Physics: ${PHYSICS_TICK_RATE}ms tick, gravity=${GRAVITY}, jump=${JUMP_VELOCITY}`);
+  log(`   Physics: ${PHYSICS_TICK_RATE}ms tick, gravity=${worldConfig.gravity || GRAVITY}, jump=${JUMP_VELOCITY}`);
   log(`   Database: ${process.env.DATABASE_PATH || 'data/aetharia.db'}`);
   log(`   Heartbeat interval: ${SERVER.HEARTBEAT_INTERVAL}ms`);
+  log(`   Portals: ${(worldConfig.portals || []).length}`);
   startHeartbeat();
   startPhysicsLoop();
   startAutoSave();
+  placePortals();
 });
+
+// ─────────────────────────────────────────────
+// Portal Placement
+// ─────────────────────────────────────────────
+
+function placePortals() {
+  const portals = worldConfig.portals || [];
+  for (const portal of portals) {
+    // Find surface and place portal ABOVE ground
+    const surfaceY = findSpawnSurface(portal.x);
+    // Portal goes at surface-1, surface-2, surface-3 (above ground)
+    const baseY = surfaceY;
+    // Clear air space around portal and place portal blocks
+    for (let dy = 0; dy < 3; dy++) {
+      placeBlock(portal.x, baseY - dy, WORLD.TILES.PORTAL);
+    }
+    // Clear blocks next to portal so player can walk in
+    for (let dy = 0; dy < 3; dy++) {
+      placeBlock(portal.x - 1, baseY - dy, WORLD.TILES.AIR);
+      placeBlock(portal.x + 1, baseY - dy, WORLD.TILES.AIR);
+    }
+    // Store the portal Y for collision detection
+    portal._y = baseY;
+    // Verify placement
+    const verifyTile = getTile(portal.x, baseY);
+    log(`🌀 Portal placed at (${portal.x}, ${baseY} to ${baseY - 2}) → ${portal.targetName} [verify: tile=${verifyTile}]`);
+  }
+}
+
+// ─────────────────────────────────────────────
+// Portal Detection (called from physics loop)
+// ─────────────────────────────────────────────
+const portalCooldowns = new Map(); // playerId → timestamp
+
+function checkPortalCollision(playerId, player) {
+  // Cooldown: prevent rapid re-triggering
+  const now = Date.now();
+  const lastPortal = portalCooldowns.get(playerId) || 0;
+  if (now - lastPortal < 3000) return; // 3 second cooldown
+
+  const tileX = Math.floor(player.x);
+  const tileY = Math.floor(player.y);
+
+  // Check tiles at player position and feet
+  const tileHead = getTile(tileX, tileY);
+  const tileFeet = getTile(tileX, tileY + 1);
+  if (tileHead !== WORLD.TILES.PORTAL && tileFeet !== WORLD.TILES.PORTAL) return;
+
+  // Find which portal this is
+  const portals = worldConfig.portals || [];
+  let matchedPortal = null;
+  for (const p of portals) {
+    if (Math.abs(tileX - p.x) <= 0) {
+      matchedPortal = p;
+      break;
+    }
+  }
+
+  if (!matchedPortal) return;
+  if (!player.authenticated || !player.username) return;
+
+  portalCooldowns.set(playerId, now);
+
+  // Save player state before transfer
+  try {
+    db.savePlayerState(
+      player.username, player.x, player.y,
+      player.zone, player.inventory, player.credits
+    );
+  } catch (e) {
+    log(`❌ Portal save failed: ${e.message}`);
+  }
+
+  // Generate JWT token with player state
+  const token = jwt.sign({
+    username: player.username,
+    inventory: player.inventory,
+    credits: player.credits,
+    color: player.color,
+    fromWorld: worldConfig.id,
+  }, PORTAL_SECRET, { expiresIn: '60s' });
+
+  // Determine the target URL for the frontend
+  // Inside Docker, services use internal names. For the browser,
+  // we need to map to external ports.
+  let clientTargetUrl = matchedPortal.targetUrl;
+  // If there's a CLIENT_TARGET_URLS env, use that for browser-facing URLs
+  const clientUrls = process.env.CLIENT_PORTAL_URLS;
+  if (clientUrls) {
+    try {
+      const urlMap = JSON.parse(clientUrls);
+      if (urlMap[matchedPortal.targetWorld]) {
+        clientTargetUrl = urlMap[matchedPortal.targetWorld];
+      }
+    } catch(e) {}
+  }
+
+  // Send portal transfer to client
+  const ws = playerIdToWs.get(playerId);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: MSG.PORTAL_TRANSFER,
+      targetUrl: clientTargetUrl,
+      token: token,
+      worldName: matchedPortal.targetName,
+      worldId: matchedPortal.targetWorld,
+    }));
+    log(`🌀 ${player.username} entering portal → ${matchedPortal.targetName}`);
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "id": "origin",
+  "name": "Origin",
+  "seed": 12345,
+  "gravity": 30,
+  "spawnX": 0,
+  "spawnY": 0,
+  "description": "The starting world — where all journeys begin.",
+  "portals": [
+    { "x": 50, "y": -5, "targetWorld": "caverns", "targetName": "Caverns", "targetUrl": "ws://world-caverns:8080" },
+    { "x": -50, "y": -5, "targetWorld": "skylands", "targetName": "Skylands", "targetUrl": "ws://world-skylands:8080" }
+  ]
+}

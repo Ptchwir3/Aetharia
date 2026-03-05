@@ -44,7 +44,7 @@ const modifications = new Map();
  */
 function placeBlock(worldX, worldY, tileType) {
   if (!Number.isInteger(worldX) || !Number.isInteger(worldY)) return false;
-  if (!Number.isInteger(tileType) || tileType < 0 || tileType > 7) return false;
+  if (!Number.isInteger(tileType) || tileType < 0 || tileType > 8) return false;
 
   const key = `${worldX},${worldY}`;
   modifications.set(key, tileType);

@@ -286,7 +286,7 @@ function handlePlaceBlock(data, player, playerId, ws, context) {
     return;
   }
 
-  if (!Number.isInteger(tile) || tile < 0 || tile > 7) {
+  if (!Number.isInteger(tile) || tile < 0 || tile > 8) {
     sendError(ws, 'placeBlock requires valid tile type (0-7)');
     return;
   }

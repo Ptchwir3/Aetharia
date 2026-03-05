@@ -1,0 +1,12 @@
+{
+  "id": "caverns",
+  "name": "Caverns",
+  "seed": 99999,
+  "gravity": 30,
+  "spawnX": 0,
+  "spawnY": 0,
+  "description": "Deep underground realm — rich in stone and minerals.",
+  "portals": [
+    { "x": 0, "y": -5, "targetWorld": "origin", "targetName": "Origin", "targetUrl": "ws://world-origin:8080" }
+  ]
+}

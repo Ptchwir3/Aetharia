@@ -1,0 +1,12 @@
+{
+  "id": "skylands",
+  "name": "Skylands",
+  "seed": 77777,
+  "gravity": 15,
+  "spawnX": 0,
+  "spawnY": 0,
+  "description": "Floating islands high above the clouds — low gravity.",
+  "portals": [
+    { "x": 0, "y": -5, "targetWorld": "origin", "targetName": "Origin", "targetUrl": "ws://world-origin:8080" }
+  ]
+}

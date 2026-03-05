@@ -124,91 +124,61 @@
 
 ---
 
-## Day 3: Portal System & Multi-World Architecture
+## Day 3: Portal System & Multi-World Architecture (IN PROGRESS)
 
 **Goal:** Multiple worlds running as separate backends. Portals transport players between them.
 
 ### Shared Infrastructure
 
-- [ ] Create `Shared/worldConfig.js` — world configuration loader:
-```javascript
-  { id: "origin", name: "Origin", seed: 12345, gravity: 30, spawnX: 0, spawnY: 0, description: "The starting world" }
-```
-- [ ] Create `Shared/portalRegistry.json` — defines portal connections:
-```json
-  [
-    { "worldId": "origin", "x": 50, "y": -5, "targetWorld": "caverns", "targetUrl": "ws://world-caverns:8080" },
-    { "worldId": "caverns", "x": 0, "y": -5, "targetWorld": "origin", "targetUrl": "ws://world-origin:8080" }
-  ]
-```
-- [ ] Add new tile type `PORTAL = 8` to `Shared/Utils/constants.js`
-- [ ] Add portal color to frontend `TILE_COLORS`: `8: 0x9C27B0` (purple)
+- [x] Create `Shared/worldConfig.js` — world configuration loader
+- [x] Create world config JSON files (portals defined inline, no separate registry needed)
+- [x] Add new tile type `PORTAL = 8` to `Shared/Utils/constants.js`
+- [x] Add portal color to frontend `TILE_COLORS`: `8: 0x9C27B0` (purple)
 
 ### Backend
 
-- [ ] Accept `WORLD_CONFIG` env var (path to JSON file)
-- [ ] Load world config on startup — use its seed, gravity, name
-- [ ] On startup: read portal registry, place portal tiles at configured positions using `worldState.placeBlock()`
-- [ ] Portal detection in physics loop:
-  - [ ] Each tick, check if player is standing on/in a `PORTAL` tile
-  - [ ] If yes, generate a signed JWT containing: `{ username, inventory, credits, targetWorld }`
-  - [ ] Send `portalTransfer` message: `{ targetUrl, token, worldName }`
-- [ ] New endpoint: accept incoming portal transfers
-  - [ ] Validate JWT token
-  - [ ] Create player session from token data (username, inventory, credits)
-  - [ ] Spawn at target world's portal position
-- [ ] Add JWT dependency: `jsonwebtoken`
-- [ ] Shared `PORTAL_SECRET` env var across all world instances
+- [x] Accept `WORLD_CONFIG` env var (path to JSON file)
+- [x] Load world config on startup — use its seed, gravity, name
+- [x] On startup: place portal tiles at configured positions using `worldState.placeBlock()`
+- [x] Portal detection function (`checkPortalCollision`):
+  - [x] Check if player is on a `PORTAL` tile
+  - [x] Generate a signed JWT containing: `{ username, inventory, credits, targetWorld }`
+  - [x] Send `portalTransfer` message: `{ targetUrl, token, worldName }`
+- [ ] **Wire up E-key `portalInteract` message to trigger portal transfer** (next session)
+- [x] Accept incoming portal transfers (`portalArrive` handler)
+  - [x] Validate JWT token
+  - [x] Create player session from token data (username, inventory, credits)
+  - [x] Spawn at target world's portal position
+- [x] Add JWT dependency: `jsonwebtoken`
+- [x] Shared `PORTAL_SECRET` env var across all world instances
+- [x] World name included in welcome message payload
 
 ### Frontend
 
-- [ ] Handle `portalTransfer` message:
-  - [ ] Fade screen to black
-  - [ ] Show "Traveling to [World Name]..." text
-  - [ ] Disconnect from current WebSocket
-  - [ ] Connect to new WebSocket URL with token
-  - [ ] Send `portalArrive` message with JWT
-  - [ ] On new `welcome`: fade in, render new world
-- [ ] Add portal tile rendering: animated/pulsing purple rectangle
-- [ ] Show current world name in HUD
+- [x] `handlePortalTransfer` method: fade to black, show travel text, disconnect, reconnect to new world
+- [x] `checkPortalProximity` method: "Press E to enter portal" prompt when near portal
+- [ ] **Debug E key → portalInteract → portalTransfer flow** (next session)
+- [x] Portal tile renders as purple
+- [x] Show current world name in HUD
+- [x] Portal token sent via `portalArrive` on reconnect to new world
+- [x] Portal fade removed on welcome
 
 ### Docker Compose
 
-- [ ] Update `docker-compose.yml` with multiple world backends:
-```yaml
-  world-origin:
-    build: { context: ., dockerfile: Backend/Dockerfile }
-    environment:
-      - WORLD_CONFIG=/app/config/origin.json
-      - PORTAL_SECRET=shared-secret
-      - DATABASE_PATH=/app/data/aetharia.db
-    volumes:
-      - aetharia-data:/app/data
-      - ./worlds:/app/config
-    ports: ["8080:8080"]
-
-  world-caverns:
-    build: { context: ., dockerfile: Backend/Dockerfile }
-    environment:
-      - WORLD_CONFIG=/app/config/caverns.json
-      - PORTAL_SECRET=shared-secret
-      - DATABASE_PATH=/app/data/aetharia.db
-    volumes:
-      - aetharia-data:/app/data
-      - ./worlds:/app/config
-    ports: ["8081:8080"]
-```
-- [ ] Create `worlds/` directory with config JSON files:
-  - [ ] `origin.json` — seed 12345, standard gravity
-  - [ ] `caverns.json` — seed 99999, deeper caves, more stone
-  - [ ] `skylands.json` — seed 77777, higher terrain, lower gravity
-- [ ] Frontend connects to origin by default, portals handle the rest
+- [x] Update `docker-compose.yml` with multiple world backends (Origin, Caverns, Skylands)
+- [x] Create `worlds/` directory with config JSON files:
+  - [x] `origin.json` — seed 12345, standard gravity, 2 portals
+  - [x] `caverns.json` — seed 99999, deeper caves, more stone, 1 portal
+  - [x] `skylands.json` — seed 77777, higher terrain, low gravity (15), 1 portal
+- [x] `start.sh` launcher script — auto-detects host IP, generates active compose file
+- [x] Frontend connects to Origin by default, portals handle the rest
+- [x] `.gitignore` updated to exclude generated `docker-compose.active.yml`
 
 ### Testing
 
-- [ ] Start all 3 worlds with `docker compose up --build`
-- [ ] Connect to origin world → see purple portal blocks
-- [ ] Walk into portal → screen fades → appear in caverns with different terrain
+- [x] Start all 3 worlds with `bash start.sh`
+- [x] Connect to origin world → see purple portal blocks
+- [ ] Walk to portal → press E → screen fades → appear in caverns with different terrain
 - [ ] Inventory carries over through portal
 - [ ] Walk into caverns' portal → return to origin
 - [ ] Credits and inventory persist across world transfers

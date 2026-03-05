@@ -36,6 +36,7 @@ const TILE_COLORS = {
   5: 0xFFEB3B,     // SAND
   6: 0x5D4037,     // WOOD
   7: 0x2E7D32,     // LEAVES
+  8: 0x9C27B0,     // PORTAL
 };
 
 const SKY_COLOR = '#87CEEB';
@@ -205,6 +206,14 @@ class ChunkRenderer {
   }
 
   // Get tile type at a world tile position (for collision detection)
+  clearAll() {
+    for (const key of Object.keys(this.chunks)) {
+      const entry = this.chunks[key];
+      if (entry && entry.graphics) entry.graphics.destroy();
+    }
+    this.chunks = {};
+  }
+
   getTileAt(worldTileX, worldTileY) {
     const chunkX = Math.floor(worldTileX / CHUNK_SIZE);
     const chunkY = Math.floor(worldTileY / CHUNK_SIZE);
@@ -431,6 +440,7 @@ class HUD {
       `${dot} ${data.playerName || 'Player'}`,
       `💰 ${data.credits || 0} credits`,
       `Pos: ${Math.round(data.x)}, ${Math.round(data.y)}`,
+      `World: ${data.worldName || 'Origin'}`,
       `Zone: ${data.zone || '...'}`,
       `Players: ${data.playerCount}`,
     ];
@@ -1036,6 +1046,13 @@ class AethariaScene extends Phaser.Scene {
     // Right-click context menu prevention
     this.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    // E key — interact (portals)
+    this.input.keyboard.on('keydown-E', () => {
+      if (!this.chat.isActive() && this.profileReady) {
+        this.network.send({ type: 'portalInteract' });
+      }
+    });
+
     this.input.keyboard.on('keydown-T', () => {
       if (!this.chat.isActive() && this.profileReady) {
         this.chat.showInput();
@@ -1139,6 +1156,11 @@ class AethariaScene extends Phaser.Scene {
     this.network.on('error', (msg) => {
       console.warn(`⚠️ Server error: ${msg.message}`);
     });
+    // ── Portal Transfer ──
+    this.network.on('portalTransfer', (msg) => {
+      this.handlePortalTransfer(msg);
+    });
+
     // ── Interact Result ──
     this.network.on('interactResult', (msg) => {
       this.chat.addMessage('', msg.message, true);
@@ -1238,8 +1260,78 @@ class AethariaScene extends Phaser.Scene {
       // Enable block interaction
       if (this.blockInteraction) this.blockInteraction.enable();
 
-      this.chat.addMessage('', `Welcome to Aetharia, ${this.playerName}!`, true);
+      // Remove portal fade if present
+      if (this._portalFade) {
+        this._portalFade.style.opacity = '0';
+        setTimeout(() => {
+          if (this._portalFade && this._portalFade.parentNode) {
+            this._portalFade.parentNode.removeChild(this._portalFade);
+          }
+          this._portalFade = null;
+        }, 500);
+      }
+
+      this.chat.addMessage('', `Welcome to ${this.worldName || 'Aetharia'}, ${this.playerName}!`, true);
   }
+  checkPortalProximity(tileX, tileY) {
+    let nearPortal = false;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const tile = this.chunkRenderer.getTileAt(tileX + dx, tileY + dy);
+        if (tile === 8) { nearPortal = true; break; }
+      }
+      if (nearPortal) break;
+    }
+
+    if (nearPortal && !this.portalPrompt) {
+      this.portalPrompt = this.add.text(
+        this.playerSprite.x, this.playerSprite.y - 40,
+        'Press E to enter portal', {
+          fontSize: '12px', fontFamily: 'monospace',
+          color: '#ff00ff', backgroundColor: '#000000aa',
+          padding: { x: 6, y: 3 },
+        }
+      );
+      this.portalPrompt.setOrigin(0.5);
+      this.portalPrompt.setDepth(300);
+    } else if (!nearPortal && this.portalPrompt) {
+      this.portalPrompt.destroy();
+      this.portalPrompt = null;
+    } else if (nearPortal && this.portalPrompt) {
+      this.portalPrompt.setPosition(this.playerSprite.x, this.playerSprite.y - 40);
+    }
+  }
+
+  handlePortalTransfer(msg) {
+    console.log('Portal transfer to ' + msg.worldName);
+    this.profileReady = false;
+    if (this.blockInteraction) this.blockInteraction.disable();
+
+    const fade = document.createElement('div');
+    fade.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 0.5s;opacity:0;';
+    fade.innerHTML = '<div style="color:#0ff;font-family:monospace;font-size:24px;margin-bottom:10px;">Traveling to ' + msg.worldName + '...</div><div style="color:#888;font-family:monospace;font-size:14px;">Hold tight, traveler.</div>';
+    document.body.appendChild(fade);
+    setTimeout(() => { fade.style.opacity = '1'; }, 10);
+
+    if (this.playerSprite) { this.playerSprite.destroy(); this.playerSprite = null; }
+    if (this.playerLabel) { this.playerLabel.destroy(); this.playerLabel = null; }
+    this.playerManager.clear();
+    if (this.chunkRenderer.clearAll) this.chunkRenderer.clearAll();
+    this.playerId = null;
+
+    this.network.intentionalClose = true;
+    if (this.network.ws) this.network.ws.close();
+
+    setTimeout(() => {
+      this.network.url = msg.targetUrl;
+      this.portalToken = msg.token;
+      this.network.reconnectDelay = 1000;
+      this.network.connect();
+    }, 1500);
+
+    this._portalFade = fade;
+  }
+
   logout() {
     // Disconnect and show auth screen again
     this.profileReady = false;
@@ -1368,6 +1460,9 @@ class AethariaScene extends Phaser.Scene {
         chunkY: chunk.chunkY,
       }, true);
     }
+
+    // Check if near a portal tile — show prompt
+    try { this.checkPortalProximity(tileX, tileY); } catch(e) {}
 
     this.updateHUD();
   }
