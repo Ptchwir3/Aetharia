@@ -135,7 +135,7 @@ function handleMove(data, player, playerId, ws, context) {
 
   // Anti-cheat: check horizontal delta
   const dx = Math.abs(x - player.x);
-  if (dx > PLAYER.MAX_MOVE_DELTA) {
+  if (dx > 50) {
     sendError(ws, 'Movement too large');
     return;
   }

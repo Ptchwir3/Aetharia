@@ -1076,9 +1076,19 @@ class AethariaScene extends Phaser.Scene {
 
   registerNetworkHandlers() {
     // ── Welcome ──
-    // ── Auth Required — show login/register screen ──
+    // ── Auth Required — show login/register screen, or send portal token ──
     this.network.on('authRequired', () => {
       console.log('🔐 Server requires authentication');
+
+      // If we're arriving via portal, send the token instead of showing login
+      if (this.portalToken) {
+        console.log('🌀 Sending portalArrive token to new world server');
+        const token = this.portalToken;
+        this.portalToken = null;
+        this.network.send({ type: 'portalArrive', token }, true);
+        return;
+      }
+
       const authScreen = new AuthScreen(this.network);
       authScreen.show().then((msg) => {
         this.handleWelcome(msg);
@@ -1086,7 +1096,7 @@ class AethariaScene extends Phaser.Scene {
     });
 
     this.network.on('welcome', (msg) => {
-      // If we get welcome directly (shouldn't happen with auth), handle it
+      // Called after portalArrive auth succeeds, or if server sends welcome directly
       if (!this.playerId) this.handleWelcome(msg);
     });
 
@@ -1271,7 +1281,7 @@ class AethariaScene extends Phaser.Scene {
         }, 500);
       }
 
-      this.chat.addMessage('', `Welcome to ${this.worldName || 'Aetharia'}, ${this.playerName}!`, true);
+      this.chat.addMessage('', `Welcome to ${(this.worldConfig && this.worldConfig.worldName) || 'Aetharia'}, ${this.playerName}!`, true);
   }
   checkPortalProximity(tileX, tileY) {
     let nearPortal = false;

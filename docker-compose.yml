@@ -19,7 +19,7 @@ services:
       - DATABASE_PATH=/app/data/aetharia.db
       - AETHARIA_HEARTBEAT=30000
       - AETHARIA_DEBUG=false
-      - CLIENT_PORTAL_URLS={"caverns":"ws://HOSTIP:8081","skylands":"ws://HOSTIP:8082"}
+      - CLIENT_PORTAL_URLS={"caverns":"ws://192.168.1.165:8081","skylands":"ws://192.168.1.165:8082"}
     volumes:
       - aetharia-data:/app/data
       - ./worlds:/app/config:ro
@@ -44,7 +44,7 @@ services:
       - PORTAL_SECRET=aetharia-portal-s3cret
       - DATABASE_PATH=/app/data/aetharia.db
       - AETHARIA_HEARTBEAT=30000
-      - CLIENT_PORTAL_URLS={"origin":"ws://HOSTIP:8080","skylands":"ws://HOSTIP:8082"}
+      - CLIENT_PORTAL_URLS={"origin":"ws://192.168.1.165:8080","skylands":"ws://192.168.1.165:8082"}
     volumes:
       - aetharia-data:/app/data
       - ./worlds:/app/config:ro
@@ -69,7 +69,7 @@ services:
       - PORTAL_SECRET=aetharia-portal-s3cret
       - DATABASE_PATH=/app/data/aetharia.db
       - AETHARIA_HEARTBEAT=30000
-      - CLIENT_PORTAL_URLS={"origin":"ws://HOSTIP:8080","caverns":"ws://HOSTIP:8081"}
+      - CLIENT_PORTAL_URLS={"origin":"ws://192.168.1.165:8080","caverns":"ws://192.168.1.165:8081"}
     volumes:
       - aetharia-data:/app/data
       - ./worlds:/app/config:ro

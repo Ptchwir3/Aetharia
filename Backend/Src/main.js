@@ -28,7 +28,7 @@ const jwt = require('jsonwebtoken');
 // World Configuration
 // ─────────────────────────────────────────────
 const worldConfig = loadWorldConfig();
-const PORTAL_SECRET = process.env.PORTAL_SECRET || 'aetharia-portal-secret';
+const PORTAL_SECRET = process.env.PORTAL_SECRET || 'aetharia-portal-s3cret';
 
 // Override world seed from config
 if (worldConfig.seed) WORLD.SEED = worldConfig.seed;
@@ -323,6 +323,7 @@ wss.on('connection', (ws) => {
             sendExistingPlayers(ws, playerId, zoneId);
           } catch (e) {
             log(`❌ Portal token invalid: ${e.message}`);
+            ws.send(JSON.stringify({ type: 'authRequired' })); // fall back to login screen
             ws.send(JSON.stringify({ type: 'authError', message: 'Portal transfer failed — please log in' }));
           }
           return;
@@ -585,16 +586,32 @@ function checkPortalCollision(playerId, player) {
   const tileX = Math.floor(player.x);
   const tileY = Math.floor(player.y);
 
-  // Check tiles at player position and feet
-  const tileHead = getTile(tileX, tileY);
-  const tileFeet = getTile(tileX, tileY + 1);
-  if (tileHead !== WORLD.TILES.PORTAL && tileFeet !== WORLD.TILES.PORTAL) return;
+  log(`🌀 Portal check for ${player.username} at (${tileX}, ${tileY})`);
+
+  // Check nearby tiles for portal (2 tile radius)
+  let foundPortal = false;
+  for (let dx = -2; dx <= 2; dx++) {
+    for (let dy = -2; dy <= 2; dy++) {
+      const t = getTile(tileX + dx, tileY + dy);
+      if (t === WORLD.TILES.PORTAL) {
+        foundPortal = true;
+        log(`🌀 Found portal tile at (${tileX + dx}, ${tileY + dy})`);
+        break;
+      }
+    }
+    if (foundPortal) break;
+  }
+
+  if (!foundPortal) {
+    log(`🌀 No portal nearby`);
+    return;
+  }
 
   // Find which portal this is
   const portals = worldConfig.portals || [];
   let matchedPortal = null;
   for (const p of portals) {
-    if (Math.abs(tileX - p.x) <= 0) {
+    if (Math.abs(tileX - p.x) <= 3) {
       matchedPortal = p;
       break;
     }
