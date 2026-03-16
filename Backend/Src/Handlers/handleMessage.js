@@ -67,7 +67,10 @@ module.exports = function handleMessage(data, playerId, players, ws, wss, contex
   }
 
   const now = Date.now();
+  log(`📨 MSG from ${playerId.substring(0,8)}: type=${data.type} (last=${now - player.lastMessageAt}ms ago)`);
+
   if (now - player.lastMessageAt < SERVER.MIN_MESSAGE_INTERVAL) {
+    log(`🚫 Rate limited: ${data.type} from ${playerId.substring(0,8)}`);
     return;
   }
   player.lastMessageAt = now;
@@ -141,16 +144,30 @@ function handleMove(data, player, playerId, ws, context) {
   }
 
   // Horizontal collision check
+  // The server owns Y via the physics loop. For horizontal movement we only
+  // block if the destination column is solid at the player's SURFACE level —
+  // i.e. the lowest air tile above ground at that X. This prevents the
+  // server's Y (which may be below the visual terrain at the destination)
+  // from causing false collision blocks as terrain height changes.
   const newTileX = Math.floor(x + (x > player.x ? 0.9 : 0));
-  const playerTileY = Math.floor(player.y);
-  const headY = playerTileY;
-  const feetY = playerTileY + 0.9;
 
-  const headTile = getTile(newTileX, Math.floor(headY));
-  const feetTile = getTile(newTileX, Math.floor(feetY));
+  // Find the surface Y at the destination X by scanning upward from y=10
+  // until we find two consecutive air tiles (head + body space).
+  let destSurfaceY = Math.floor(player.y);
+  for (let scanY = 10; scanY > -30; scanY--) {
+    const t = getTile(newTileX, scanY);
+    const tAbove = getTile(newTileX, scanY - 1);
+    if (SOLID_TILES.includes(t) && !SOLID_TILES.includes(tAbove)) {
+      destSurfaceY = scanY - 1; // air tile just above ground
+      break;
+    }
+  }
 
-  if (SOLID_TILES.includes(headTile) || SOLID_TILES.includes(feetTile)) {
-    // Blocked — don't update X
+  const headTile = getTile(newTileX, destSurfaceY);
+  const feetTile = getTile(newTileX, destSurfaceY + 1);
+
+  if (SOLID_TILES.includes(headTile) && SOLID_TILES.includes(feetTile)) {
+    // Destination column is a solid wall — block movement
   } else {
     player.x = x;
   }
