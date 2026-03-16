@@ -25,7 +25,7 @@ const GRAVITY = 600;
 const JUMP_VELOCITY = -280;
 const MAX_FALL_SPEED = 500;
 const SOLID_TILES = [1, 2, 3, 5, 6, 7];
-const WORLD_TILES = { AIR: 0, DIRT: 1, STONE: 2, GRASS: 3, WATER: 4, SAND: 5, WOOD: 6, LEAVES: 7 }; // Everything except AIR(0) and WATER(4)
+const WORLD_TILES = { AIR: 0, DIRT: 1, STONE: 2, GRASS: 3, WATER: 4, SAND: 5, WOOD: 6, LEAVES: 7 };
 
 const TILE_COLORS = {
   0: null,         // AIR
@@ -41,7 +41,6 @@ const TILE_COLORS = {
 
 const SKY_COLOR = '#87CEEB';
 
-// Player color presets
 const COLOR_PRESETS = [
   { name: 'Red',     hex: '#FF5722' },
   { name: 'Blue',    hex: '#2196F3' },
@@ -199,13 +198,11 @@ class ChunkRenderer {
     }
     chunkEntry.graphics.fillRect(px, py, TILE_SIZE, TILE_SIZE);
 
-    // Also update the cached tile data so collision detection stays accurate
     if (chunkEntry.data && chunkEntry.data.tiles) {
       chunkEntry.data.tiles[localY][localX] = tile;
     }
   }
 
-  // Get tile type at a world tile position (for collision detection)
   clearAll() {
     for (const key of Object.keys(this.chunks)) {
       const entry = this.chunks[key];
@@ -468,7 +465,7 @@ class Hotbar {
   constructor(scene) {
     this.scene = scene;
     this.slots = [];
-    this.elements = []; // track all elements for repositioning
+    this.elements = [];
     this.selectedIndex = 0;
     this.inventory = [];
     this.slotCount = 9;
@@ -478,7 +475,6 @@ class Hotbar {
   }
 
   build() {
-    // Destroy old elements if rebuilding
     this.elements.forEach(e => e.destroy());
     this.elements = [];
     this.slots = [];
@@ -489,7 +485,6 @@ class Hotbar {
     const startX = (w - totalWidth) / 2;
     const y = h - this.slotSize - 12;
 
-    // Background bar
     const bg = this.scene.add.rectangle(
       w / 2, y + this.slotSize / 2,
       totalWidth + 16, this.slotSize + 12,
@@ -541,7 +536,6 @@ class Hotbar {
     this.built = true;
     this.refresh();
 
-    // Rebuild on window resize
     this.scene.scale.on('resize', () => {
       this.built = false;
       this.build();
@@ -567,7 +561,6 @@ class Hotbar {
       const slot = this.slots[i];
       const item = this.inventory[i];
 
-      // Update selection highlight
       slot.bg.setStrokeStyle(2, i === this.selectedIndex ? 0x00ffff : 0x444444);
 
       if (item && item.quantity > 0) {
@@ -612,12 +605,10 @@ class BlockInteraction {
     this.maxRange = 5;
     this.enabled = false;
 
-    // Create highlight overlay
     this.highlight = scene.add.rectangle(0, 0, TILE_SIZE, TILE_SIZE, 0xffffff, 0.2);
     this.highlight.setDepth(15);
     this.highlight.setVisible(false);
 
-    // Mouse/pointer events
     scene.input.on('pointermove', (pointer) => this.onPointerMove(pointer));
     scene.input.on('pointerdown', (pointer) => this.onPointerDown(pointer));
   }
@@ -652,9 +643,9 @@ class BlockInteraction {
 
       const tile = this.chunkRenderer.getTileAt(tileX, tileY);
       if (SOLID_TILES.includes(tile)) {
-        this.highlight.setFillStyle(0xff0000, 0.2); // Red = can mine
+        this.highlight.setFillStyle(0xff0000, 0.2);
       } else {
-        this.highlight.setFillStyle(0x00ff00, 0.2); // Green = can place
+        this.highlight.setFillStyle(0x00ff00, 0.2);
       }
     } else {
       this.highlight.setVisible(false);
@@ -671,13 +662,11 @@ class BlockInteraction {
     const currentTile = this.chunkRenderer.getTileAt(tileX, tileY);
 
     if (pointer.rightButtonDown() || pointer.event.shiftKey) {
-      // Mine / remove block
       if (SOLID_TILES.includes(currentTile)) {
         this.network.send({ type: 'removeBlock', x: tileX, y: tileY });
         this.flashTile(tileX, tileY, 0xffffff);
       }
     } else {
-      // Place block from hotbar
       const item = this.hotbar.getSelectedItem();
       if (item && item.quantity > 0 && !SOLID_TILES.includes(currentTile)) {
         this.network.send({ type: 'placeBlock', x: tileX, y: tileY, tile: item.tile });
@@ -708,7 +697,7 @@ class AuthScreen {
     this.network = network;
     this.resolve = null;
     this.selectedColor = COLOR_PRESETS[0].hex;
-    this.mode = 'login'; // 'login' or 'register'
+    this.mode = 'login';
   }
 
   show() {
@@ -740,7 +729,6 @@ class AuthScreen {
       this.subtitle.style.cssText = 'color: #888; margin-bottom: 20px; font-size: 12px;';
       panel.appendChild(this.subtitle);
 
-      // Error display
       this.errorDiv = document.createElement('div');
       this.errorDiv.style.cssText = `
         color: #ff4444; font-size: 12px; margin-bottom: 12px;
@@ -749,7 +737,6 @@ class AuthScreen {
       `;
       panel.appendChild(this.errorDiv);
 
-      // Username
       const nameLabel = document.createElement('div');
       nameLabel.textContent = 'USERNAME';
       nameLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 4px; letter-spacing: 2px;';
@@ -769,7 +756,6 @@ class AuthScreen {
       this.nameInput.addEventListener('blur', () => { this.nameInput.style.borderColor = '#333'; });
       panel.appendChild(this.nameInput);
 
-      // Password
       const passLabel = document.createElement('div');
       passLabel.textContent = 'PASSWORD';
       passLabel.style.cssText = 'color: #aaa; text-align: left; font-size: 10px; margin-bottom: 4px; letter-spacing: 2px;';
@@ -789,7 +775,6 @@ class AuthScreen {
       this.passInput.addEventListener('blur', () => { this.passInput.style.borderColor = '#333'; });
       panel.appendChild(this.passInput);
 
-      // Confirm password (register only)
       this.confirmSection = document.createElement('div');
       this.confirmSection.style.cssText = 'display: none;';
 
@@ -814,7 +799,6 @@ class AuthScreen {
       this.confirmSection.appendChild(this.confirmInput);
       panel.appendChild(this.confirmSection);
 
-      // Color picker (hidden in login mode, shown in register)
       this.colorSection = document.createElement('div');
       this.colorSection.style.cssText = 'display: none;';
 
@@ -855,7 +839,6 @@ class AuthScreen {
       this.colorSection.appendChild(colorGrid);
       panel.appendChild(this.colorSection);
 
-      // Submit button
       this.btn = document.createElement('button');
       this.btn.textContent = 'LOG IN';
       this.btn.style.cssText = `
@@ -870,14 +853,12 @@ class AuthScreen {
       this.btn.addEventListener('click', () => this.submit());
       panel.appendChild(this.btn);
 
-      // Toggle link
       this.toggleLink = document.createElement('div');
       this.toggleLink.innerHTML = 'No account? <span style="color:#0ff;cursor:pointer;text-decoration:underline;">Create one</span>';
       this.toggleLink.style.cssText = 'color: #666; font-size: 11px;';
       this.toggleLink.querySelector('span').addEventListener('click', () => this.toggleMode());
       panel.appendChild(this.toggleLink);
 
-      // Listen for auth errors from server
       this.authErrorHandler = (msg) => {
         this.showError(msg.message);
         this.btn.disabled = false;
@@ -885,14 +866,18 @@ class AuthScreen {
       };
       this.network.on('authError', this.authErrorHandler);
 
-      // Listen for welcome (auth succeeded)
+      // ── FIX: AuthScreen uses a one-shot welcome handler that resolves the
+      // promise, then immediately restores the scene's welcome handler so
+      // portal arrivals are not swallowed by a stale AuthScreen closure. ──
       this.welcomeHandler = (msg) => {
         this.overlay.remove();
+        // Restore a no-op welcome handler — the scene's authRequired handler
+        // calls handleWelcome directly after the promise resolves.
+        this.network.on('welcome', () => {});
         resolve(msg);
       };
       this.network.on('welcome', this.welcomeHandler);
 
-      // Handle enter key on inputs
       const handleEnter = (e) => {
         e.stopPropagation();
         if (e.key === 'Enter') this.submit();
@@ -966,7 +951,7 @@ class AuthScreen {
 }
 
 // ─────────────────────────────────────────────
-// Block Update Handler (for real-time world changes)
+// Block Update Handler
 // ─────────────────────────────────────────────
 
 class BlockUpdateHandler {
@@ -1022,31 +1007,26 @@ class AethariaScene extends Phaser.Scene {
     };
     this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-    // Logout button (L key)
     this.input.keyboard.on('keydown-L', () => {
       if (!this.chat.isActive() && this.profileReady) {
         this.logout();
       }
     });
 
-    // Hotbar number keys 1-9
     for (let i = 1; i <= 9; i++) {
       this.input.keyboard.on(`keydown-${i === 1 ? 'ONE' : i === 2 ? 'TWO' : i === 3 ? 'THREE' : i === 4 ? 'FOUR' : i === 5 ? 'FIVE' : i === 6 ? 'SIX' : i === 7 ? 'SEVEN' : i === 8 ? 'EIGHT' : 'NINE'}`, () => {
         if (!this.chat.isActive()) this.hotbar.selectSlot(i - 1);
       });
     }
 
-    // Scroll wheel for hotbar
     this.input.on('wheel', (pointer, gameObjects, deltaX, deltaY) => {
       if (!this.chat.isActive()) {
         this.hotbar.scrollSlot(deltaY > 0 ? 1 : -1);
       }
     });
 
-    // Right-click context menu prevention
     this.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // E key — interact (portals)
     this.input.keyboard.on('keydown-E', () => {
       if (!this.chat.isActive() && this.profileReady) {
         this.network.send({ type: 'portalInteract' });
@@ -1063,10 +1043,7 @@ class AethariaScene extends Phaser.Scene {
       this.network.send({ type: 'chat', message }, true);
     };
 
-    // Hotbar
     this.hotbar = new Hotbar(this);
-
-    // Block interaction (mouse mining/placing)
     this.blockInteraction = new BlockInteraction(this, this.chunkRenderer, this.network, this.hotbar);
 
     this.registerNetworkHandlers();
@@ -1074,31 +1051,41 @@ class AethariaScene extends Phaser.Scene {
     this.chat.addMessage('', 'Connecting to Aetharia...', true);
   }
 
+  // ── Re-register the scene-level welcome handler. Called after login and
+  // after portal transfer so AuthScreen's closure never stays in place. ──
+  registerWelcomeHandler() {
+    this.network.on('welcome', (msg) => {
+      console.log('🌐 Scene welcome handler fired, playerId=', this.playerId);
+      if (!this.playerId) this.handleWelcome(msg);
+    });
+  }
+
   registerNetworkHandlers() {
-    // ── Welcome ──
-    // ── Auth Required — show login/register screen, or send portal token ──
+    // ── Auth Required ──
     this.network.on('authRequired', () => {
       console.log('🔐 Server requires authentication');
 
-      // If we're arriving via portal, send the token instead of showing login
+      // Portal arrival — send token instead of showing login screen
       if (this.portalToken) {
         console.log('🌀 Sending portalArrive token to new world server');
         const token = this.portalToken;
         this.portalToken = null;
+        // Re-register scene welcome handler so portal welcome is handled correctly
+        this.registerWelcomeHandler();
         this.network.send({ type: 'portalArrive', token }, true);
         return;
       }
 
       const authScreen = new AuthScreen(this.network);
       authScreen.show().then((msg) => {
+        // AuthScreen resolved — restore scene welcome handler, then handle welcome
+        this.registerWelcomeHandler();
         this.handleWelcome(msg);
       });
     });
 
-    this.network.on('welcome', (msg) => {
-      // Called after portalArrive auth succeeds, or if server sends welcome directly
-      if (!this.playerId) this.handleWelcome(msg);
-    });
+    // Register the scene-level welcome handler for the initial connection
+    this.registerWelcomeHandler();
 
     // ── Existing Players ──
     this.network.on('existingPlayers', (msg) => {
@@ -1138,8 +1125,7 @@ class AethariaScene extends Phaser.Scene {
     this.network.on('blockUpdate', (msg) => {
       this.blockHandler.handle(msg);
     });
-
-    // ── Position Correction (server-side gravity) ──
+    // ── Position Correction ──
     this.network.on('positionCorrection', (msg) => {
       if (!this.playerSprite) return;
       const serverPixelX = msg.x * TILE_SIZE + TILE_SIZE / 2;
@@ -1149,13 +1135,14 @@ class AethariaScene extends Phaser.Scene {
       this.onGround = msg.onGround;
       if (msg.onGround) this.velocityY = 0;
 
-      // Immediately request chunks around corrected position
+      this.lastSentX = msg.x;
+      this.lastSentY = msg.y;
+
       const missing = this.chunkRenderer.getMissingChunks(serverPixelX, serverPixelY);
       for (const chunk of missing) {
         this.network.send({ type: 'requestChunk', chunkX: chunk.chunkX, chunkY: chunk.chunkY }, true);
       }
     });
-
     // ── Zone Changed ──
     this.network.on('zoneChanged', (msg) => {
       this.zone = msg.zone;
@@ -1170,119 +1157,110 @@ class AethariaScene extends Phaser.Scene {
     this.network.on('portalTransfer', (msg) => {
       this.handlePortalTransfer(msg);
     });
-
     // ── Interact Result ──
     this.network.on('interactResult', (msg) => {
       this.chat.addMessage('', msg.message, true);
     });
-
     // ── Inventory Update ──
     this.network.on('inventoryUpdate', (msg) => {
       if (this.hotbar && msg.inventory) {
         this.hotbar.setInventory(msg.inventory);
-        // Update credits display
-        const player = msg;
         if (msg.credits !== undefined) this.playerCredits = msg.credits;
       }
     });
   }
 
   handleWelcome(msg) {
-      console.log(`🎉 Welcome! ID: ${msg.id}, Zone: ${msg.zone}`);
-      console.log('📦 Welcome msg keys:', Object.keys(msg));
-      console.log('📦 Inventory:', JSON.stringify(msg.inventory));
-      console.log('📦 Hotbar exists:', !!this.hotbar);
-      this.playerId = msg.id;
-      this.zone = msg.zone;
-      this.worldConfig = msg.worldConfig;
+    console.log(`🎉 Welcome! ID: ${msg.id}, Zone: ${msg.zone}`);
+    console.log('📦 Welcome msg keys:', Object.keys(msg));
+    console.log('📦 Inventory:', JSON.stringify(msg.inventory));
+    console.log('📦 Hotbar exists:', !!this.hotbar);
+    this.playerId = msg.id;
+    this.zone = msg.zone;
+    this.worldConfig = msg.worldConfig;
 
-      if (msg.chunks) {
-        this.chunkRenderer.addChunks(msg.chunks);
-      }
+    if (msg.chunks) {
+      this.chunkRenderer.addChunks(msg.chunks);
+    }
 
-      this.playerName = msg.name;
-      this.playerColor = msg.color;
-      this.playerCredits = msg.credits || 0;
+    this.playerName = msg.name;
+    this.playerColor = msg.color;
+    this.playerCredits = msg.credits || 0;
 
-      // Find the surface at spawn X so we start on the ground
-      let spawnTileX = Math.round(msg.x);
-      let spawnTileY = Math.round(msg.y);
+    let spawnTileX = Math.round(msg.x);
+    let spawnTileY = Math.round(msg.y);
 
-      // First check if spawn is inside solid ground — scan UP to find air
-      const spawnTile = this.chunkRenderer.getTileAt(spawnTileX, spawnTileY);
-      if (SOLID_TILES.includes(spawnTile)) {
-        for (let y = spawnTileY; y > spawnTileY - 50; y--) {
-          const tile = this.chunkRenderer.getTileAt(spawnTileX, y);
-          if (!SOLID_TILES.includes(tile)) {
-            spawnTileY = y;
-            break;
-          }
-        }
-      } else {
-        // Spawn is in air — scan DOWN to find ground
-        for (let y = spawnTileY; y < spawnTileY + 50; y++) {
-          const tile = this.chunkRenderer.getTileAt(spawnTileX, y);
-          if (SOLID_TILES.includes(tile)) {
-            spawnTileY = y - 1;
-            break;
-          }
+    const spawnTile = this.chunkRenderer.getTileAt(spawnTileX, spawnTileY);
+    if (SOLID_TILES.includes(spawnTile)) {
+      for (let y = spawnTileY; y > spawnTileY - 50; y--) {
+        const tile = this.chunkRenderer.getTileAt(spawnTileX, y);
+        if (!SOLID_TILES.includes(tile)) {
+          spawnTileY = y;
+          break;
         }
       }
-
-      const spawnPixelX = spawnTileX * TILE_SIZE + TILE_SIZE / 2;
-      const spawnPixelY = spawnTileY * TILE_SIZE + TILE_SIZE / 2;
-      const colorInt = parseInt(this.playerColor.replace('#', '0x'), 16);
-
-      if (this.playerSprite) this.playerSprite.destroy();
-      if (this.playerLabel) this.playerLabel.destroy();
-
-      this.playerSprite = this.add.rectangle(
-        spawnPixelX, spawnPixelY,
-        TILE_SIZE - 4, TILE_SIZE - 4,
-        colorInt
-      );
-      this.playerSprite.setDepth(20);
-
-      this.playerLabel = this.add.text(spawnPixelX, spawnPixelY - TILE_SIZE / 2 - 2, this.playerName, {
-        fontSize: '11px',
-        fontFamily: 'monospace',
-        color: '#ffffff',
-        backgroundColor: '#00000088',
-        padding: { x: 3, y: 2 },
-      });
-      this.playerLabel.setOrigin(0.5, 1);
-      this.playerLabel.setDepth(21);
-
-      this.lastSentX = spawnTileX;
-      this.lastSentY = spawnTileY;
-
-      this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
-
-      this.velocityY = 0;
-      this.onGround = false;
-      this.profileReady = true;
-
-      // Populate hotbar with inventory from server
-      if (this.hotbar && msg.inventory) {
-        this.hotbar.setInventory(msg.inventory);
+    } else {
+      for (let y = spawnTileY; y < spawnTileY + 50; y++) {
+        const tile = this.chunkRenderer.getTileAt(spawnTileX, y);
+        if (SOLID_TILES.includes(tile)) {
+          spawnTileY = y - 1;
+          break;
+        }
       }
+    }
 
-      // Enable block interaction
-      if (this.blockInteraction) this.blockInteraction.enable();
+    const spawnPixelX = spawnTileX * TILE_SIZE + TILE_SIZE / 2;
+    const spawnPixelY = spawnTileY * TILE_SIZE + TILE_SIZE / 2;
+    const colorInt = parseInt(this.playerColor.replace('#', '0x'), 16);
 
-      // Remove portal fade if present
-      if (this._portalFade) {
-        this._portalFade.style.opacity = '0';
-        setTimeout(() => {
-          if (this._portalFade && this._portalFade.parentNode) {
-            this._portalFade.parentNode.removeChild(this._portalFade);
-          }
-          this._portalFade = null;
-        }, 500);
-      }
+    if (this.playerSprite) this.playerSprite.destroy();
+    if (this.playerLabel) this.playerLabel.destroy();
 
-      this.chat.addMessage('', `Welcome to ${(this.worldConfig && this.worldConfig.worldName) || 'Aetharia'}, ${this.playerName}!`, true);
+    this.playerSprite = this.add.rectangle(
+      spawnPixelX, spawnPixelY,
+      TILE_SIZE - 4, TILE_SIZE - 4,
+      colorInt
+    );
+    this.playerSprite.setDepth(20);
+
+    this.playerLabel = this.add.text(spawnPixelX, spawnPixelY - TILE_SIZE / 2 - 2, this.playerName, {
+      fontSize: '11px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+      backgroundColor: '#00000088',
+      padding: { x: 3, y: 2 },
+    });
+    this.playerLabel.setOrigin(0.5, 1);
+    this.playerLabel.setDepth(21);
+
+    this.lastSentX = spawnTileX;
+    this.lastSentY = spawnTileY;
+
+    this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
+
+    this.velocityY = 0;
+    this.onGround = false;
+    this.profileReady = true;
+
+    if (this.hotbar && msg.inventory) {
+      this.hotbar.setInventory(msg.inventory);
+    }
+
+    if (this.blockInteraction) this.blockInteraction.enable();
+
+    if (this._portalFade) {
+      this._portalFade.style.opacity = '0';
+      setTimeout(() => {
+        if (this._portalFade && this._portalFade.parentNode) {
+          this._portalFade.parentNode.removeChild(this._portalFade);
+        }
+        this._portalFade = null;
+      }, 500);
+    }
+
+    this.chat.addMessage('', `Welcome to ${(this.worldConfig && this.worldConfig.worldName) || 'Aetharia'}, ${this.playerName}!`, true);
   }
+
   checkPortalProximity(tileX, tileY) {
     let nearPortal = false;
     for (let dx = -1; dx <= 1; dx++) {
@@ -1343,7 +1321,6 @@ class AethariaScene extends Phaser.Scene {
   }
 
   logout() {
-    // Disconnect and show auth screen again
     this.profileReady = false;
     if (this.blockInteraction) this.blockInteraction.disable();
     if (this.playerSprite) { this.playerSprite.destroy(); this.playerSprite = null; }
@@ -1353,12 +1330,10 @@ class AethariaScene extends Phaser.Scene {
     this.playerName = 'Traveler';
     this.playerCredits = 0;
 
-    // Intentional disconnect — prevent auto-reconnect
     this.network.intentionalClose = true;
     if (this.network.ws) {
       this.network.ws.close();
     }
-    // Reconnect after a short delay — will trigger authRequired again
     setTimeout(() => {
       this.network.reconnectDelay = 1000;
       this.network.connect();
@@ -1373,22 +1348,19 @@ class AethariaScene extends Phaser.Scene {
       return;
     }
 
-    // ── Helper: check if a world tile is solid ──
     const isSolid = (tX, tY) => {
       const tile = this.chunkRenderer.getTileAt(Math.floor(tX), Math.floor(tY));
       return SOLID_TILES.includes(tile);
     };
 
-    // ── Unstick: if player is embedded in solid, push up ──
     const curTileX = (this.playerSprite.x - TILE_SIZE / 2) / TILE_SIZE;
     const curTileY = (this.playerSprite.y - TILE_SIZE / 2) / TILE_SIZE;
     if (isSolid(curTileX + 0.5, curTileY + 0.5)) {
       this.playerSprite.y -= TILE_SIZE;
       this.velocityY = 0;
-      return; // Skip this frame, try again next
+      return;
     }
 
-    // ── Horizontal movement ──
     let vx = 0;
     if (this.cursors.left.isDown || this.wasd.left.isDown) vx = -PLAYER_SPEED;
     if (this.cursors.right.isDown || this.wasd.right.isDown) vx = PLAYER_SPEED;
@@ -1396,15 +1368,13 @@ class AethariaScene extends Phaser.Scene {
     const dx = vx * (delta / 1000);
     let newX = this.playerSprite.x + dx;
 
-    // Horizontal collision — check tile at player's body
     const playerTileY = (this.playerSprite.y - TILE_SIZE / 2) / TILE_SIZE;
     const checkX = (newX - TILE_SIZE / 2) / TILE_SIZE + (vx > 0 ? 0.9 : 0);
     if (vx !== 0 && (isSolid(checkX, playerTileY + 0.1) || isSolid(checkX, playerTileY + 0.9))) {
-      newX = this.playerSprite.x; // Block horizontal movement
+      newX = this.playerSprite.x;
     }
     this.playerSprite.x = newX;
 
-    // ── Gravity + Jumping ──
     const jumpPressed = this.cursors.up.isDown || this.wasd.up.isDown || this.spaceBar.isDown;
     if (jumpPressed && this.onGround) {
       this.velocityY = JUMP_VELOCITY;
@@ -1417,16 +1387,13 @@ class AethariaScene extends Phaser.Scene {
     const dy = this.velocityY * (delta / 1000);
     let newY = this.playerSprite.y + dy;
 
-    // Vertical collision
     const newTileX = (this.playerSprite.x - TILE_SIZE / 2) / TILE_SIZE;
     const leftEdge = newTileX + 0.1;
     const rightEdge = newTileX + 0.9;
 
     if (this.velocityY > 0) {
-      // Falling — check below feet
       const feetCheckY = (newY - TILE_SIZE / 2) / TILE_SIZE + 1.0;
       if (isSolid(leftEdge, feetCheckY) || isSolid(rightEdge, feetCheckY)) {
-        // Snap to top of the tile we hit
         const landTileY = Math.floor(feetCheckY);
         newY = landTileY * TILE_SIZE - TILE_SIZE / 2;
         this.velocityY = 0;
@@ -1435,7 +1402,6 @@ class AethariaScene extends Phaser.Scene {
         this.onGround = false;
       }
     } else if (this.velocityY < 0) {
-      // Jumping — check above head
       const headCheckY = (newY - TILE_SIZE / 2) / TILE_SIZE;
       if (isSolid(leftEdge, headCheckY) || isSolid(rightEdge, headCheckY)) {
         const bonkTileY = Math.floor(headCheckY) + 1;
@@ -1445,7 +1411,6 @@ class AethariaScene extends Phaser.Scene {
     }
     this.playerSprite.y = newY;
 
-    // Move name label with player
     if (this.playerLabel) {
       this.playerLabel.setPosition(this.playerSprite.x, this.playerSprite.y - TILE_SIZE / 2 - 2);
     }
@@ -1471,7 +1436,6 @@ class AethariaScene extends Phaser.Scene {
       }, true);
     }
 
-    // Check if near a portal tile — show prompt
     try { this.checkPortalProximity(tileX, tileY); } catch(e) {}
 
     this.updateHUD();
@@ -1486,6 +1450,7 @@ class AethariaScene extends Phaser.Scene {
       x: tileX,
       y: tileY,
       zone: this.zone,
+      worldName: this.worldConfig ? this.worldConfig.worldName : null,
       playerName: this.playerName,
       credits: this.playerCredits || 0,
       playerCount: Object.keys(this.playerManager.players).length + 1,

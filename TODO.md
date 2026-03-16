@@ -144,7 +144,7 @@
   - [x] Check if player is on a `PORTAL` tile
   - [x] Generate a signed JWT containing: `{ username, inventory, credits, targetWorld }`
   - [x] Send `portalTransfer` message: `{ targetUrl, token, worldName }`
-- [ ] **Wire up E-key `portalInteract` message to trigger portal transfer** (next session)
+- [x] **Wire up E-key `portalInteract` message to trigger portal transfer** (next session)
 - [x] Accept incoming portal transfers (`portalArrive` handler)
   - [x] Validate JWT token
   - [x] Create player session from token data (username, inventory, credits)
@@ -157,7 +157,7 @@
 
 - [x] `handlePortalTransfer` method: fade to black, show travel text, disconnect, reconnect to new world
 - [x] `checkPortalProximity` method: "Press E to enter portal" prompt when near portal
-- [ ] **Debug E key → portalInteract → portalTransfer flow** (next session)
+- [x] **Debug E key → portalInteract → portalTransfer flow** (next session)
 - [x] Portal tile renders as purple
 - [x] Show current world name in HUD
 - [x] Portal token sent via `portalArrive` on reconnect to new world
@@ -178,11 +178,11 @@
 
 - [x] Start all 3 worlds with `bash start.sh`
 - [x] Connect to origin world → see purple portal blocks
-- [ ] Walk to portal → press E → screen fades → appear in caverns with different terrain
-- [ ] Inventory carries over through portal
-- [ ] Walk into caverns' portal → return to origin
-- [ ] Credits and inventory persist across world transfers
-- [ ] Multiple players can use portals independently
+- [x] Walk to portal → press E → screen fades → appear in caverns with different terrain
+- [x] Inventory carries over through portal
+- [x] Walk into caverns' portal → return to origin
+- [x] Credits and inventory persist across world transfers
+- [x] Multiple players can use portals independently
 
 ### Definition of Done
 **Walk into a portal in Origin, appear in Caverns with your inventory intact. Walk into another portal, arrive in Skylands. Three separate worlds, one identity.**
